@@ -27,7 +27,7 @@ except ImportError as error:
 # ----------------------------- configuration -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PTV_API_KEY = ""                         # Transport Victoria API key UUID
-STOP_ID = 15967                                # e.g. 1127
+STOP_ID = 17901                                # e.g. 1127
 """
 Examples
 15967 Marlborough Street Reserve/Marlborough St | To Chadstone
@@ -48,10 +48,12 @@ STATIC_ARCHIVE_NAMES = {
 	"5/google_transit.zip",
 	"6/google_transit.zip",
 }
+STATIC_MODE = "bus"
 API_URL = (
 	"https://api.opendata.transport.vic.gov.au/"
 	"opendata/public-transport/gtfs/realtime/v1/bus/trip-updates"
 )
+API_KEY_HEADER = "KeyID"
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 # ---------------------------------------------------------------------------
 
@@ -63,7 +65,7 @@ def _load_static_info():
 	global _static_info
 	if _static_info is not None:
 		return _static_info
-	mode = "train" if any(name.startswith("2/") for name in STATIC_ARCHIVE_NAMES) else "bus"
+	mode = STATIC_MODE
 	cache_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(STOP_ID))
 	cache_file = Path(f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache")
 	cache_signature = (
@@ -277,7 +279,7 @@ def _ptv_get():
 	request = Request(
 		API_URL,
 		headers={
-			"KeyID": PTV_API_KEY,
+			API_KEY_HEADER: PTV_API_KEY,
 			"Accept": "application/x-protobuf",
 			"User-Agent": "ptv-punctuality-tracker/1.0",
 		},

@@ -11,6 +11,8 @@ PTV `devid` parameter or HMAC signing.
 ## Features
 
 - Monitor bus stops or Melbourne Metro train stations.
+- Monitor Yarra Tram stops and V/Line stations with their dedicated realtime
+  feeds.
 - Display the public route or train line, destination, local Melbourne time,
   and delay status.
 - Show all upcoming departures at a location, not only the first one.
@@ -97,7 +99,7 @@ The default bus API feed is:
 https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/bus/trip-updates
 ```
 
-## Running the train tracker
+## Running the Metro train tracker
 
 Edit `ptvtrain.py` and set a Melbourne train station GTFS stop ID:
 
@@ -115,11 +117,59 @@ python -u .\ptvtrain.py
 Train station parent IDs are expanded automatically to their platform child
 IDs. For example, `vic:rail:OAK` includes the Oakleigh platform stops.
 
-The train tracker uses:
+The Metro train tracker uses:
 
 ```text
 https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates
 ```
+
+## Running the tram tracker
+
+Use `ptvtram.py` for Yarra Trams. Set the tram stop ID and API key:
+
+```python
+PTV_API_KEY = "your-api-key-uuid"
+STOP_ID = 17901
+```
+
+Run it with:
+
+```powershell
+python -u .\ptvtram.py
+```
+
+The tram feed is updated less frequently than the bus and Metro train feeds,
+so the default polling interval is 60 seconds. Its API uses the
+`Ocp-Apim-Subscription-Key` header:
+
+```text
+https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/trip-updates
+```
+
+## Running the V/Line tracker
+
+Use `ptvline.py` for regional V/Line passenger trains. For example:
+
+```python
+PTV_API_KEY = "your-api-key-uuid"
+STOP_ID = "vic:rail:NNG"
+```
+
+Run it with:
+
+```powershell
+python -u .\ptvline.py
+```
+
+The V/Line feed uses the regional static GTFS branch and its own realtime
+endpoint:
+
+```text
+https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/vline/trip-updates
+```
+
+V/Line uses the `KeyId` request header. `ptvtrain.py` is for Metro Trains and
+uses the `KeyID` header, so changing only the GTFS archive is not sufficient.
 
 ## Finding stop IDs
 
@@ -150,6 +200,8 @@ All generated files are stored next to the scripts:
 
 - `ptv_punctuality.csv` - bus observations
 - `ptv_train_punctuality.csv` - train observations
+- `ptv_tram_punctuality.csv` - tram observations
+- `ptv_vline_punctuality.csv` - V/Line observations
 - `transport_victoria_gtfs.zip` - downloaded static GTFS data
 - `transport_victoria_gtfs_*.cache` - parsed static GTFS indexes
 
@@ -211,6 +263,9 @@ in the latest feed.
 
 - Check the printed stop name and ID.
 - Confirm the mode-specific script is being used.
+- Tram and V/Line use different realtime endpoints and authentication headers;
+  use `ptvtram.py` or `ptvline.py` rather than changing only the GTFS archive
+  list in `ptvtrain.py`.
 - For train stations, use the parent station ID where possible so platform
   child IDs are included.
 - Remember that services may not operate every day; the static feed contains
