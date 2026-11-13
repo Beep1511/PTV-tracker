@@ -5,6 +5,7 @@ Fill in the API key below before running this script.
 
 import csv
 from io import BytesIO
+import os
 import pickle
 import re
 import sys
@@ -26,15 +27,16 @@ except ImportError as error:
 # ----------------------------- configuration -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PTV_API_KEY = ""                         # Transport Victoria API key UUID
-STOP_ID = 4012                                # e.g. 1127
+STOP_ID = 15967                                # e.g. 1127
 """
+Examples
 15967 Marlborough Street Reserve/Marlborough St | To Chadstone
 19800 Oakleigh Station/Portman St
 51645 Murrumbeena Station/Murrumbeena Rd | To Moorabbin / Sandringham
 16372 Centre Rd/Second St | To Westall
 6220 Murrumbeena Rd/North Rd | To Monash
 """
-ROUTE_ID = None                                 # e.g. None = all buses      Not route number like 630, I don't know what it should look like :(
+ROUTE_ID = None                                 # e.g. None = all buses     Route ID, not route number like 630 (I don't know what it should look like )
 RUN_ID = None                                   # exact trip ID, if known
 POLL_SECONDS = 30
 MAX_RESULTS = 20
@@ -65,7 +67,7 @@ def _load_static_info():
 	cache_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(STOP_ID))
 	cache_file = Path(f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache")
 	cache_signature = (
-		2,
+		3,
 		STATIC_GTFS_ZIP.stat().st_mtime_ns if STATIC_GTFS_ZIP.exists() else None,
 		str(STOP_ID),
 		tuple(sorted(STATIC_ARCHIVE_NAMES)),
@@ -123,11 +125,15 @@ def _load_static_info():
 					for row in csv.DictReader(
 						(line.decode("utf-8-sig") for line in file)
 					):
-						routes[row["route_id"]] = (
-							row.get("route_short_name")
-							or row.get("route_long_name")
-							or row["route_id"]
-						)
+						routes[row["route_id"]] = {
+							"name": (
+								row.get("route_short_name")
+								or row.get("route_long_name")
+								or row["route_id"]
+							),
+							"color": row.get("route_color", ""),
+							"text_color": row.get("route_text_color", ""),
+						}
 
 				with schedule.open("stop_times.txt") as file:
 					for row in csv.DictReader(
@@ -187,18 +193,75 @@ def _load_static_info():
 def _route_name(route_id, routes):
 	"""Resolve the public route number from a realtime route identifier."""
 	if route_id in routes:
-		return routes[route_id]
+		return routes[route_id]["name"]
 
 	match = re.fullmatch(r"vic:(\d+):.*", route_id)
 	if match:
 		encoded_number = match.group(1)
 		candidates = [
-			name for name in routes.values()
-			if name.isdigit() and encoded_number.endswith(name)
+			info for info in routes.values()
+			if info["name"].isdigit() and encoded_number.endswith(info["name"])
 		]
 		if candidates:
-			return max(candidates, key=len)
+			return max(candidates, key=lambda info: len(info["name"]))["name"]
 	return route_id
+
+
+def _route_colors(route_id, routes):
+	"""Return the GTFS route colors for a realtime route identifier."""
+	info = routes.get(route_id)
+	if info is not None:
+		return info["color"], info["text_color"]
+	match = re.fullmatch(r"vic:(\d+):.*", route_id)
+	if match:
+		encoded_number = match.group(1)
+		candidates = [
+			info for info in routes.values()
+			if info["name"].isdigit() and encoded_number.endswith(info["name"])
+		]
+		if candidates:
+			info = max(candidates, key=lambda item: len(item["name"]))
+			return info["color"], info["text_color"]
+	return "", ""
+
+
+def _ansi_color(value, foreground=False):
+	"""Convert a six-digit GTFS color to an ANSI true-color escape."""
+	if not value or len(value) != 6:
+		return ""
+	try:
+		red, green, blue = (
+			int(value[index:index + 2], 16) for index in (0, 2, 4)
+		)
+	except ValueError:
+		return ""
+	channel = 38 if foreground else 48
+	return f"\033[{channel};2;{red};{green};{blue}m"
+
+
+def _colored_route(route_name, route_id, routes):
+	"""Format a route label with its GTFS background and text colors."""
+	background, foreground = _route_colors(route_id, routes)
+	if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
+		return route_name
+	prefix = _ansi_color(background) + _ansi_color(foreground, foreground=True)
+	return f"{prefix} {route_name} \033[0m" if prefix else route_name
+
+
+def _colored_status(delay_seconds, realtime):
+	"""Color realtime status: late red, early orange, on-time green."""
+	status = _format_delay(delay_seconds)
+	if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
+		return status
+	if delay_seconds is not None and delay_seconds > 0:
+		color = "\033[91m"
+	elif delay_seconds is not None and delay_seconds < 0:
+		color = "\033[38;2;255;165;0m"
+	elif realtime:
+		color = "\033[92m"
+	else:
+		return status
+	return f"{color}{status}\033[0m"
 
 
 def _trip_key(trip_id):
@@ -442,10 +505,11 @@ def main():
 					}
 					save_observation(row)
 					print(
-						f"{row['stop_name']} | {row['route_name']} | "
+						f"{row['stop_name']} | "
+						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | "
 						f"To {row['direction']} | "
 						f"departure={local_departure.strftime('%H:%M:%S')} "
-						f"({_format_delay(item['delay_seconds'])}) "
+						f"({_colored_status(item['delay_seconds'], item['realtime'])}) "
 						f" | {'realtime' if item['realtime'] else 'scheduled'}"
 					)
 			time.sleep(POLL_SECONDS)
