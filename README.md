@@ -31,7 +31,7 @@ Able to track:
 - [X] Metro Trains
 - [ ] Trams
 - [ ] Coaches
-- [x] V/Lines
+- [x] V/Lines (Known error: Only display schedule time, no realtime)
 
 ## Requirements
 
@@ -59,8 +59,7 @@ installed. The script uses `Australia/Melbourne` for displayed times.
 PTV_API_KEY = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-Do not commit a real API key to a public repository. If a key has ever been
-published, revoke it and create a replacement immediately.
+**Note: You may also need a Yarra Tram API for tram tracker**
 
 ## Running the bus tracker
 
