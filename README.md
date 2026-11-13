@@ -1,3 +1,4 @@
+
 # PTV Tracker
 
 Track upcoming Public Transport Victoria (PTV) bus and Melbourne Metro train
@@ -19,14 +20,16 @@ PTV `devid` parameter or HMAC signing.
 - Display realtime arrival and departure data separately in the CSV log.
 - Cache the parsed static GTFS index for fast subsequent launches.
 - Refresh the realtime feed every 30 seconds by default.
-
+- Use GTFS route colors for terminal route labels and color-code realtime
+  status: red for late, orange for early, and green for realtime on time.
 
 Able to track:
-- [x] Buses
-- [x] Metro Trains
+
+- [X] Buses
+- [X] Metro Trains
 - [ ] Trams
 - [ ] Coaches
-- [x] V/Lines
+- [ ] V/Lines
 
 ## Requirements
 
@@ -134,12 +137,12 @@ numeric or platform-specific IDs.
 The scripts also print the resolved stop name. Use that output to verify that
 the configured ID is the location you intended.
 
-You can look up the Stop ID for your desired location on [Moovit](https://moovitapp.com/). 
+You can look up the Stop ID for your desired location on [Moovit](https://moovitapp.com/).
+
 - **Example:** The [Doncaster Rd/Blackburn Rd](https://moovitapp.com/index/en-gb/public_transportation-Doncaster_Rd_Blackburn_Rd-Melbourne-stop_7991625-2803) stop has an ID of `4012`.
 
 > [!NOTE]
 > **Platform & Bay Limitation:** This script tracks a single specific Stop ID at a time. It **cannot** simultaneously track buses departing from different bays or platforms within the same interchange/station, as each bay is assigned a unique Stop ID.
-
 
 ## Output and caching
 
@@ -167,6 +170,17 @@ archive changes or the configured stop/mode changes.
 The terminal output uses departure time because that is the time passengers
 use when deciding whether they can catch the service. Arrival time and its
 delay remain available in the CSV output.
+
+When run in an interactive terminal, route labels use the `route_color` and
+`route_text_color` values from GTFS. Realtime status colors are red for late,
+orange for early, and green for realtime on time. Colors are automatically
+disabled when output is redirected. Set the `NO_COLOR` environment variable to
+disable them manually:
+
+```powershell
+$env:NO_COLOR = "1"
+python -u .\ptvbus.py
+```
 
 ## Data sources and API behavior
 
@@ -211,7 +225,6 @@ faster. Delete the relevant cache file if you want to force a rebuild.
 > [!WARNING]
 > - **Directory Isolation:** Running this script generates numerous cache files. We strongly recommend placing the `.py` files in a dedicated directory.
 > - **File Dependencies:** `ptvtrain.py` depends on functions defined in `ptvbus.py`. Ensure both files are downloaded and located in the same directory before execution.
-
 
 ## License
 
