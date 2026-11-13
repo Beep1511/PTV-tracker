@@ -126,6 +126,13 @@ numeric or platform-specific IDs.
 The scripts also print the resolved stop name. Use that output to verify that
 the configured ID is the location you intended.
 
+You can look up the Stop ID for your desired location on [Moovit](https://moovitapp.com/). 
+- **Example:** The [Doncaster Rd/Blackburn Rd](https://moovitapp.com/index/en-gb/public_transportation-Doncaster_Rd_Blackburn_Rd-Melbourne-stop_7991625-2803) stop has an ID of `4012`.
+
+> [!NOTE]
+> **Platform & Bay Limitation:** This script tracks a single specific Stop ID at a time. It **cannot** simultaneously track buses departing from different bays or platforms within the same interchange/station, as each bay is assigned a unique Stop ID.
+
+
 ## Output and caching
 
 All generated files are stored next to the scripts:
@@ -192,6 +199,11 @@ in the latest feed.
 The first launch may take time while the static GTFS archive is parsed. The
 parsed result is cached beside the script, so subsequent launches are much
 faster. Delete the relevant cache file if you want to force a rebuild.
+
+> [!WARNING]
+> - **Directory Isolation:** Running this script generates numerous cache files. We strongly recommend placing the `.py` files in a dedicated directory.
+> - **File Dependencies:** `ptvtrain.py` depends on functions defined in `ptvbus.py`. Ensure both files are downloaded and located in the same directory before execution.
+
 
 ## License
 
