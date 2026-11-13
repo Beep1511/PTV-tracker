@@ -1,6 +1,8 @@
 """Track Melbourne Metro train departures at a station.
 
 Set STOP_ID to the station's GTFS stop ID and fill in the API key below.
+
+Note: This program CANNOT track V/Line services.
 """
 
 import ptvbus as _common
@@ -8,7 +10,15 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:CFD"  # Melbourne train station GTFS stop ID
+STOP_ID = "vic:rail:CLA"  # Melbourne train station GTFS stop ID
+"""
+Examples
+"vic:rail:RMD" - Richmond
+"vic:rail:SSS" - Southern Cross
+"vic:rail:FSY" - Footscray
+"vic:rail:WTL" - Westall
+"vic:rail:FKN" - Frankston
+"""
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
@@ -19,7 +29,8 @@ API_URL = (
 	"opendata/public-transport/gtfs/realtime/v1/metro/trip-updates"
 )
 STATIC_ARCHIVE_NAMES = {
-	"2/google_transit.zip",
+	"2/google_transit.zip",        # Metro Train
+	"1/google_transit.zip"         # V/Line
 }
 STATIC_GTFS_ZIP = BASE_DIR / "transport_victoria_gtfs.zip"
 STATIC_GTFS_URL = "https://data.ptv.vic.gov.au/downloads/gtfs.zip"
