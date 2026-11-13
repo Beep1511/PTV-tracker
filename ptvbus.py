@@ -34,7 +34,7 @@ STOP_ID = 4012                                # e.g. 1127
 16372 Centre Rd/Second St | To Westall
 6220 Murrumbeena Rd/North Rd | To Monash
 """
-ROUTE_ID = None                                 # e.g. 601; None = all buses
+ROUTE_ID = None                                 # e.g. None = all buses      Not route number like 630, I don't know what it should look like :(
 RUN_ID = None                                   # exact trip ID, if known
 POLL_SECONDS = 30
 MAX_RESULTS = 20
