@@ -20,6 +20,14 @@ PTV `devid` parameter or HMAC signing.
 - Cache the parsed static GTFS index for fast subsequent launches.
 - Refresh the realtime feed every 30 seconds by default.
 
+
+Able to track:
+- [x] Buses
+- [x] Metro Trains
+- [ ] Trams
+- [ ] Coaches
+- [ ] V/Lines
+
 ## Requirements
 
 - Python 3.10 or newer
