@@ -8,7 +8,7 @@ PTV_API_KEY = ""
 STOP_ID = 17901  # Tram stop GTFS ID
 ROUTE_ID = None
 RUN_ID = None
-POLL_SECONDS = 60
+POLL_SECONDS = 30
 MAX_RESULTS = 20
 CSV_FILE = BASE_DIR / "ptv_tram_punctuality.csv"
 STATIC_GTFS_ZIP = BASE_DIR / "transport_victoria_gtfs.zip"
@@ -19,7 +19,7 @@ API_URL = (
 	"https://api.opendata.transport.vic.gov.au/"
 	"opendata/public-transport/gtfs/realtime/v1/tram/trip-updates"
 )
-API_KEY_HEADER = "Ocp-Apim-Subscription-Key"
+API_KEY_HEADER = "KeyID"
 
 
 def main():
