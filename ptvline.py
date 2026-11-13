@@ -5,7 +5,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:NNG"  # Example: Noojee? Set a V/Line GTFS station ID.
+STOP_ID = "vic:rail:NNG"  # Example: Set a V/Line GTFS station ID.
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
@@ -20,6 +20,7 @@ API_URL = (
 	"opendata/public-transport/gtfs/realtime/v1/vline/trip-updates"
 )
 API_KEY_HEADER = "KeyId"
+DEBUG_REALTIME = True
 
 
 def main():
@@ -36,7 +37,9 @@ def main():
 	_common.STATIC_MODE = STATIC_MODE
 	_common.API_URL = API_URL
 	_common.API_KEY_HEADER = API_KEY_HEADER
+	_common.DEBUG_REALTIME = DEBUG_REALTIME
 	_common._static_info = None
+	_common._realtime_debug_reported = False
 	_common.main()
 
 
