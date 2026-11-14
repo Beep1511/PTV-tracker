@@ -61,7 +61,6 @@ installed. The script uses `Australia/Melbourne` for displayed times.
 PTV_API_KEY = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-**Note: You may also need a Yarra Tram API for tram tracker**
 
 ## Running the bus tracker
 
@@ -70,7 +69,7 @@ Edit the configuration near the top of `ptvbus.py`:
 ```python
 PTV_API_KEY = "your-api-key-uuid"
 STOP_ID = 19800  # Oakleigh station / Portman St (For 900, 693, 704...)
-ROUTE_ID = None
+ROUTE_ID = None  # Find in gtfs zip file, 49-630-aus-1 for Route 630
 RUN_ID = None
 POLL_SECONDS = 30
 MAX_RESULTS = 20
