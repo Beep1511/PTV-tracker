@@ -84,7 +84,7 @@ The script prints the configured stop name, route number, destination,
 departure time in Melbourne local time, delay status, and whether the result
 came from realtime data or the static schedule.
 
-Example:
+Output Example:
 
 ```text
 Tracking stop 19800; refreshing every 30 seconds. Press Ctrl+C to stop.
@@ -108,7 +108,7 @@ Edit `ptvtrain.py` and set a Melbourne train station GTFS stop ID:
 
 ```python
 PTV_API_KEY = "your-api-key-uuid"
-STOP_ID = "vic:rail:OAK"  # Oakleigh
+STOP_ID = "vic:rail:OAK"  # Oakleigh station / Portman St
 ```
 
 Run it with:
@@ -132,7 +132,7 @@ Use `ptvtram.py` for Yarra Trams. Set the tram stop ID and API key:
 
 ```python
 PTV_API_KEY = "your-api-key-uuid"
-STOP_ID = 17901
+STOP_ID = 17901 # Melbourne Town Hall / Collins St Stop #6 to Melbourne port
 ```
 
 Run it with:
@@ -155,7 +155,7 @@ Use `ptvline.py` for regional V/Line passenger trains. For example:
 
 ```python
 PTV_API_KEY = "your-api-key-uuid"
-STOP_ID = "vic:rail:NNG"
+STOP_ID = "vic:rail:BAT-V" # Ballarat V/Line station
 ```
 
 Run it with:
