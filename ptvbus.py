@@ -69,7 +69,7 @@ def _load_static_info():
 		return _static_info
 	mode = STATIC_MODE
 	cache_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(STOP_ID))
-	cache_file = Path(f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache")
+	cache_file = BASE_DIR / f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache"
 	cache_signature = (
 		4,
 		STATIC_GTFS_ZIP.stat().st_mtime_ns if STATIC_GTFS_ZIP.exists() else None,
