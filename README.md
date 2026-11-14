@@ -181,8 +181,12 @@ uses the `KeyID` header, so changing only the GTFS archive is not sufficient.
 ## Running the SkyBus tracker
 
 Use `ptvskybus.py` for SkyBus services. SkyBus is distributed in the
-dedicated `11/google_transit.zip` static GTFS branch and uses the bus
-GTFS-Realtime trip-update endpoint.
+dedicated `11/google_transit.zip` static GTFS branch. The launcher requests
+the bus GTFS-Realtime trip-update feed, but SkyBus realtime coverage is not
+guaranteed: the official SkyBus GTFS page says its published schedule does
+not reflect operational adjustments in real time. In practice, the tracker
+may therefore show SkyBus departures as `scheduled` even when the API key and
+bus endpoint are working correctly.
 
 ```python
 PTV_API_KEY = ""
@@ -203,9 +207,15 @@ Useful SkyBus stop IDs include:
 - `23173`, `23175`, `23183` - SkyBus Coach Terminal/Spencer St
 - `40272`, `40284` - Avalon Airport/Outside Terminal
 
-SkyBus realtime availability depends on the feed. When no matching realtime
-trip update is published, the tracker still displays the static scheduled
-departure.
+The SkyBus launcher prints one `Realtime diagnostic` line at startup. If
+`matching_trip_ids=0`, the bus feed returned no update that could be matched
+to the SkyBus static schedule; the tracker intentionally keeps the static
+scheduled departures instead of inventing a realtime estimate. SkyBus realtime
+data cannot be enabled by changing the endpoint when the operator has not
+published a matching GTFS-Realtime update.
+
+SkyBus's official GTFS information is available at:
+https://www.skybus.com.au/gtfs/
 
 ## Finding stop IDs
 

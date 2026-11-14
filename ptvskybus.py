@@ -44,7 +44,9 @@ def main():
 	_common.STATIC_MODE = STATIC_MODE
 	_common.API_URL = API_URL
 	_common.API_KEY_HEADER = API_KEY_HEADER
-	_common.DEBUG_REALTIME = False
+	# SkyBus is distributed in the bus feed, but its realtime coverage is
+	# not guaranteed. Show one diagnostic so an empty match is explainable.
+	_common.DEBUG_REALTIME = True
 	_common._static_info = None
 	_common.main()
 
