@@ -18,9 +18,8 @@ Examples
 "vic:rail:FSY" - Footscray
 "vic:rail:WTL" - Westall
 "vic:rail:FKN" - Frankston
-"vic:rail:BAT-V" - Ballarat
 """
-ROUTE_ID = None
+ROUTE_ID = None  # e.g. aus:vic:vic-02-FKN for Frankston Line, aus:vic:vic-02-FKN-R for Frankston Line Replacement Bus
 RUN_ID = None
 POLL_SECONDS = 30
 MAX_RESULTS = 20
