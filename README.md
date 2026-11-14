@@ -36,6 +36,8 @@ matching realtime update is available):
 - [X] SkyBus
 - [ ] The Overland
 
+
+
 ## Requirements
 
 - Python 3.10 or newer
@@ -327,6 +329,7 @@ faster. Delete the relevant cache file if you want to force a rebuild.
 > [!WARNING]
 > - **Directory Isolation:** Running this script generates numerous cache files. We strongly recommend placing the `.py` files in a dedicated directory.
 > - **File Dependencies:** `ptvtrain.py` depends on functions defined in `ptvbus.py`. Ensure both files are downloaded and located in the same directory before execution.
+> - **Real-time Data Limitations:** Live tracking and trip updates are currently unavailable for SkyBus, V/Line coaches, train replacement buses, and interstate trains (The Overland / XPT).
 
 ## License
 
