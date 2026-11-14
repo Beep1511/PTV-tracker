@@ -29,9 +29,11 @@ Able to track:
 
 - [X] Buses
 - [X] Metro Trains
-- [x] Trams (Known error: Only display schedule time, no realtime)
-- [ ] Coaches
-- [x] V/Lines (Known error: Only display schedule time, no realtime)
+- [x] Trams Only display schedule time, no realtime)
+- [x] Coaches
+- [x] V/Lines (Only display schedule time, no realtime)
+- [ ] Flybus
+- [ ] The Overland
 
 ## Requirements
 
@@ -67,7 +69,7 @@ Edit the configuration near the top of `ptvbus.py`:
 
 ```python
 PTV_API_KEY = "your-api-key-uuid"
-STOP_ID = 19800
+STOP_ID = 19800  # Oakleigh station / Portman St (For 900, 693, 704...)
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
@@ -108,7 +110,7 @@ Edit `ptvtrain.py` and set a Melbourne train station GTFS stop ID:
 
 ```python
 PTV_API_KEY = "your-api-key-uuid"
-STOP_ID = "vic:rail:OAK"  # Oakleigh station / Portman St
+STOP_ID = "vic:rail:OAK"  # Oakleigh station
 ```
 
 Run it with:
