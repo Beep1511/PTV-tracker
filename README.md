@@ -29,7 +29,7 @@ Able to track:
 
 - [X] Buses
 - [X] Metro Trains
-- [ ] Trams
+- [x] Trams (Known error: Only display schedule time, no realtime)
 - [ ] Coaches
 - [x] V/Lines (Known error: Only display schedule time, no realtime)
 
