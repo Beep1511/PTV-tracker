@@ -291,6 +291,44 @@ def _stop_keys(stop_id):
 	return keys
 
 
+def _normalise_location(value):
+	"""Reduce a stop or destination name to comparable location words."""
+	value = re.sub(r"\([^)]*\)", " ", value.casefold())
+	value = re.sub(r"[^a-z0-9]+", " ", value)
+	return value.split()
+
+
+def _is_terminal_at_stop(headsign, static_info):
+	"""Exclude trips whose destination is the stop currently being tracked."""
+	if not headsign:
+		return False
+	stop_names = [
+		static_info["stops"].get(str(STOP_ID), ""),
+		static_info["stops"].get(str(STOP_ID).split(":", 1)[-1], ""),
+	]
+	headsign_words = _normalise_location(headsign)
+	if not headsign_words:
+		return False
+	ignored_suffixes = {
+		"airport", "arrivals", "bay", "bus", "dr", "drive", "express",
+		"railway", "road", "station", "st", "street", "stop", "terminal",
+		"t1", "t2", "t3", "t4", "skybus",
+	}
+	for stop_name in stop_names:
+		stop_words = _normalise_location(stop_name.split("/", 1)[0])
+		if not stop_words:
+			continue
+		if headsign_words == stop_words:
+			return True
+		if (
+			len(headsign_words) < len(stop_words)
+			and stop_words[:len(headsign_words)] == headsign_words
+			and all(word in ignored_suffixes for word in stop_words[len(headsign_words):])
+		):
+			return True
+	return False
+
+
 def _ptv_get():
 	"""Fetch the authenticated GTFS-Realtime bus trip-update feed."""
 	if not PTV_API_KEY:
@@ -396,6 +434,8 @@ def departures():
 	for trip_id, departure_time in static_info["stop_times"].items():
 		trip = static_info["trips"].get(trip_id)
 		if trip is None:
+			continue
+		if _is_terminal_at_stop(trip["headsign"], static_info):
 			continue
 		if ROUTE_ID is not None and trip["route_id"] != str(ROUTE_ID):
 			continue
