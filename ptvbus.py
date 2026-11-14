@@ -254,8 +254,10 @@ def _colored_route(route_name, route_id, routes):
 
 
 def _colored_status(delay_seconds, realtime):
-	"""Color realtime status: late red, early orange, on-time green."""
+	"""Color realtime status without inventing a delay."""
 	status = _format_delay(delay_seconds)
+	if realtime and delay_seconds is None:
+		status = "realtime time"
 	if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
 		return status
 	if delay_seconds is not None and delay_seconds > 0:
@@ -465,7 +467,7 @@ def departures():
 			scheduled_departure,
 			None,
 		)
-		estimated = departure
+		estimated = departure or arrival
 		if estimated < datetime.now(timezone.utc):
 			continue
 		static_items.append(
@@ -486,7 +488,10 @@ def departures():
 				"scheduled_departure_utc": scheduled_departure,
 				"delay_seconds": delay,
 				"arrival_delay_seconds": arrival_delay,
-				"realtime": realtime_departure is not None,
+				"realtime": (
+					realtime_departure is not None
+					or realtime_arrival is not None
+				),
 				"feed_fetched_at": feed_fetched_at,
 			}
 		)

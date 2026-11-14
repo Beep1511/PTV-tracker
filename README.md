@@ -153,6 +153,11 @@ Its API uses the `KeyID` header:
 https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/trip-updates
 ```
 
+Tram realtime updates can provide a predicted timestamp without a numeric
+delay value. The tracker still uses that timestamp and labels the departure
+`realtime time`; it does not calculate or claim an early/late value when the
+feed does not provide one.
+
 ## Running the V/Line tracker
 
 Use `ptvline.py` for regional V/Line passenger trains. For example:
