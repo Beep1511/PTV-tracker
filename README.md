@@ -25,14 +25,15 @@ PTV `devid` parameter or HMAC signing.
 - Use GTFS route colors for terminal route labels and color-code realtime
   status: red for late, orange for early, and green for realtime on time.
 
-Able to track:
+Supported modes (some services may provide scheduled times only when no
+matching realtime update is available):
 
 - [X] Buses
 - [X] Metro Trains
-- [x] Trams Only display schedule time, no realtime)
-- [x] Coaches
-- [x] V/Lines (Only display schedule time, no realtime)
-- [ ] Flybus
+- [X] Trams
+- [X] Coaches
+- [X] V/Lines
+- [X] SkyBus
 - [ ] The Overland
 
 ## Requirements
@@ -61,6 +62,9 @@ installed. The script uses `Australia/Melbourne` for displayed times.
 PTV_API_KEY = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
+Keep the real key only in your local working copy. Do not commit or publish
+it. If a key has been exposed, revoke it in the Transport Victoria portal and
+create a replacement.
 
 ## Running the bus tracker
 
@@ -142,9 +146,8 @@ Run it with:
 python -u .\ptvtram.py
 ```
 
-The tram feed is updated less frequently than the bus and Metro train feeds,
-so the default polling interval is 60 seconds. Its API uses the
-`Ocp-Apim-Subscription-Key` header:
+The tram feed is updated less frequently than the bus and Metro train feeds.
+Its API uses the `KeyID` header:
 
 ```text
 https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/tram/trip-updates
@@ -174,6 +177,35 @@ https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtim
 
 V/Line uses the `KeyId` request header. `ptvtrain.py` is for Metro Trains and
 uses the `KeyID` header, so changing only the GTFS archive is not sufficient.
+
+## Running the SkyBus tracker
+
+Use `ptvskybus.py` for SkyBus services. SkyBus is distributed in the
+dedicated `11/google_transit.zip` static GTFS branch and uses the bus
+GTFS-Realtime trip-update endpoint.
+
+```python
+PTV_API_KEY = ""
+STOP_ID = 45511  # Melbourne Airport T1 Skybus/Arrival Dr
+```
+
+Run it with:
+
+```powershell
+python -u .\ptvskybus.py
+```
+
+Useful SkyBus stop IDs include:
+
+- `45511` - Melbourne Airport T1 Skybus/Arrival Dr
+- `45513` - Melbourne Airport T3 Skybus/Arrival Dr
+- `48578` - Melbourne Airport T4 Skybus/Service Rd
+- `23173`, `23175`, `23183` - SkyBus Coach Terminal/Spencer St
+- `40272`, `40284` - Avalon Airport/Outside Terminal
+
+SkyBus realtime availability depends on the feed. When no matching realtime
+trip update is published, the tracker still displays the static scheduled
+departure.
 
 ## Finding stop IDs
 
@@ -206,6 +238,7 @@ All generated files are stored next to the scripts:
 - `ptv_train_punctuality.csv` - train observations
 - `ptv_tram_punctuality.csv` - tram observations
 - `ptv_vline_punctuality.csv` - V/Line observations
+- `ptv_skybus_punctuality.csv` - SkyBus observations
 - `transport_victoria_gtfs.zip` - downloaded static GTFS data
 - `transport_victoria_gtfs_*.cache` - parsed static GTFS indexes
 

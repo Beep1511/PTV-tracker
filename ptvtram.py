@@ -5,7 +5,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = 17901  # Tram stop GTFS ID
+STOP_ID = 17903  # Tram stop GTFS ID
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30

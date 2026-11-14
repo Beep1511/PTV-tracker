@@ -565,6 +565,16 @@ def main():
 						),
 					}
 					save_observation(row)
+					if row['route_name'] == "Skybus - Melbourne Airport - Melbourne City":
+						row['route_name'] = "MCE"
+					if row['route_name'] == "Skybus - Melbourne Airport - Sunshine Railway Station":
+						row['route_name'] = "SSX"
+					if row['route_name'] == "Skybus - Melbourne Airport - Frankston":
+						row['route_name'] = "PEX"
+					if row['route_name'] == "SkyBus Eastern Express":
+						row['route_name'] = "EEX"
+					if row['route_name'] == "Skybus - Avalon Airport - Melbourne City":
+						row['route_name'] = "AVV"
 					print(
 						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | "
 						f"{item['route_long_name']} | "
@@ -573,6 +583,7 @@ def main():
 						f"({_colored_status(item['delay_seconds'], item['realtime'])}) "
 						f" | {'realtime' if item['realtime'] else 'scheduled'}"
 					)
+				print("----------------------------------------------\n")
 			time.sleep(POLL_SECONDS)
 		except KeyboardInterrupt:
 			print("\nStopped.")

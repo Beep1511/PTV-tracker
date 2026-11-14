@@ -10,7 +10,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:THL"  # Melbourne train station GTFS stop ID
+STOP_ID = "vic:rail:SSS"  # Melbourne train station GTFS stop ID
 """
 Examples
 "vic:rail:RMD" - Richmond

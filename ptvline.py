@@ -5,7 +5,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:NNG"  # Example: Set a V/Line GTFS station ID.
+STOP_ID = "vic:rail:BAT-V"  # Example: Set a V/Line GTFS station ID.
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
