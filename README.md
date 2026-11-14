@@ -88,8 +88,12 @@ Example:
 
 ```text
 Tracking stop 19800; refreshing every 30 seconds. Press Ctrl+C to stop.
-Upcoming departures: 3 (realtime feed 17:10:32)
-Oakleigh Station/Portman St | 900 | To Stud Park SC (Rowville) | departure=17:13:00 (on time) | realtime
+Upcoming departures at Oakleigh Station/Portman St: 20 (realtime feed 11:28:00)
+ 693  | Belgrave - Oakleigh via Ferntree Gully, Brandon Park | To Belgrave Station | 11:33:00 (on time)  | realtime
+ 704  | Oakleigh Station - Westall Station via Clayton | To Oakleigh Station | 11:41:00 (on time)  | scheduled
+ 804  | Dandenong - Chadstone via Wheelers Hill, Oakleigh | To Dandenong Station | 11:42:00 (on time)  | realtime
+ 900  | Stud Park SC (Rowville) - Caulfield via Monash University, Chadstone (SMARTBUS Service) | To Stud Park SC (Rowville) | 11:42:00 (on time)  | realtime
+ 704  | Oakleigh Station - Westall Station via Clayton | To Westall Station | 11:48:48 (3m 48s late)  | realtime
 ```
 
 The default bus API feed is:
