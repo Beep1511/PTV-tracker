@@ -36,7 +36,7 @@ Examples
 16372 Centre Rd/Second St | To Westall
 6220 Murrumbeena Rd/North Rd | To Monash
 """
-ROUTE_ID = None                                 # e.g. None = all buses     Route ID, not route number like 630 (I don't know what it should look like )
+ROUTE_ID = None                                 # e.g. None = all buses     Route ID 49-630-aus-1(for 630), not route number like 630
 RUN_ID = None                                   # exact trip ID, if known
 POLL_SECONDS = 30
 MAX_RESULTS = 20
