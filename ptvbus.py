@@ -27,7 +27,7 @@ except ImportError as error:
 # ----------------------------- configuration -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PTV_API_KEY = ""                         # Transport Victoria API key UUID
-STOP_ID = 17901                                # e.g. 1127
+STOP_ID = 19800                                # e.g. 1127
 """
 Examples
 15967 Marlborough Street Reserve/Marlborough St | To Chadstone
@@ -54,10 +54,12 @@ API_URL = (
 	"opendata/public-transport/gtfs/realtime/v1/bus/trip-updates"
 )
 API_KEY_HEADER = "KeyID"
+DEBUG_REALTIME = False
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 # ---------------------------------------------------------------------------
 
 _static_info = None
+_realtime_debug_reported = False
 
 
 def _load_static_info():
@@ -69,7 +71,7 @@ def _load_static_info():
 	cache_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(STOP_ID))
 	cache_file = Path(f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache")
 	cache_signature = (
-		3,
+		4,
 		STATIC_GTFS_ZIP.stat().st_mtime_ns if STATIC_GTFS_ZIP.exists() else None,
 		str(STOP_ID),
 		tuple(sorted(STATIC_ARCHIVE_NAMES)),
@@ -133,6 +135,7 @@ def _load_static_info():
 								or row.get("route_long_name")
 								or row["route_id"]
 							),
+							"long_name": row.get("route_long_name", ""),
 							"color": row.get("route_color", ""),
 							"text_color": row.get("route_text_color", ""),
 						}
@@ -271,6 +274,23 @@ def _trip_key(trip_id):
 	return re.sub(r"--\d+-", "--DAY-", trip_id)
 
 
+def _trip_keys(trip_id):
+	"""Return equivalent keys used by different Victorian realtime feeds."""
+	keys = {trip_id, _trip_key(trip_id)}
+	if "|" in trip_id:
+		keys.add(trip_id.split("|", 1)[0])
+	return keys
+
+
+def _stop_keys(stop_id):
+	"""Return equivalent keys used by static and realtime feeds."""
+	value = str(stop_id)
+	keys = {value}
+	if ":" in value:
+		keys.add(value.rsplit(":", 1)[-1])
+	return keys
+
+
 def _ptv_get():
 	"""Fetch the authenticated GTFS-Realtime bus trip-update feed."""
 	if not PTV_API_KEY:
@@ -292,23 +312,37 @@ def _ptv_get():
 
 def departures():
 	"""Return scheduled departures, overlaid with available realtime updates."""
+	global _realtime_debug_reported
 	feed = _ptv_get()
 	feed_fetched_at = datetime.now(timezone.utc)
 	static_info = _load_static_info()
 	now_local = datetime.now(MELBOURNE_TZ)
 	today = now_local.date()
 	realtime = {}
+	realtime_trip_ids = set()
+	feed_trip_count = 0
+	feed_stop_update_count = 0
+	matching_stop_update_count = 0
+	static_stop_keys = {
+		key
+		for stop_id in static_info["stop_ids"]
+		for key in _stop_keys(stop_id)
+	}
 	for entity in feed.entity:
 		if not entity.HasField("trip_update"):
 			continue
+		feed_trip_count += 1
 		trip = entity.trip_update.trip
+		realtime_trip_ids.add(trip.trip_id)
 		if RUN_ID is not None and trip.trip_id != str(RUN_ID):
 			continue
 		if ROUTE_ID is not None and trip.route_id != str(ROUTE_ID):
 			continue
 		for update in entity.trip_update.stop_time_update:
-			if update.stop_id not in static_info["stop_ids"]:
+			feed_stop_update_count += 1
+			if not _stop_keys(update.stop_id) & static_stop_keys:
 				continue
+			matching_stop_update_count += 1
 			arrival = (
 				(
 					datetime.fromtimestamp(
@@ -337,10 +371,26 @@ def departures():
 			)
 			if arrival is None and departure is None:
 				continue
-			realtime[_trip_key(trip.trip_id)] = (
-				arrival,
-				departure,
-			)
+			for key in _trip_keys(trip.trip_id):
+				realtime[key] = (
+					arrival,
+					departure,
+				)
+
+	if DEBUG_REALTIME and not _realtime_debug_reported:
+		static_trip_ids = set(static_info["stop_times"])
+		matching_trip_ids = {
+			trip_id for trip_id in realtime_trip_ids
+			if _trip_keys(trip_id) & static_trip_ids
+		}
+		print(
+			"Realtime diagnostic: "
+			f"entities={len(feed.entity)}, trip_updates={feed_trip_count}, "
+			f"stop_updates={feed_stop_update_count}, "
+			f"matching_stop_updates={matching_stop_update_count}, "
+			f"matching_trip_ids={len(matching_trip_ids)}"
+		)
+		_realtime_debug_reported = True
 
 	static_items = []
 	for trip_id, departure_time in static_info["stop_times"].items():
@@ -359,8 +409,13 @@ def departures():
 		scheduled_departure = _gtfs_time(
 			today, departure_time["departure"]
 		).astimezone(timezone.utc)
-		realtime_arrival, realtime_departure = realtime.get(
-			_trip_key(trip_id), (None, None)
+		realtime_arrival, realtime_departure = next(
+			(
+				realtime[key]
+				for key in _trip_keys(trip_id)
+				if key in realtime
+			),
+			(None, None),
 		)
 		arrival, arrival_delay = realtime_arrival or (
 			scheduled_arrival,
@@ -377,6 +432,9 @@ def departures():
 			{
 				"route_id": trip["route_id"],
 				"route_name": _route_name(trip["route_id"], static_info["routes"]),
+				"route_long_name": static_info["routes"].get(
+					trip["route_id"], {}
+				).get("long_name", ""),
 				"run_id": trip_id,
 				"stop_name": static_info["stops"].get(
 					str(STOP_ID), f"stop {STOP_ID}"
@@ -470,8 +528,9 @@ def main():
 					f"(stop {STOP_ID})."
 				)
 			else:
+				stop_name = items[0]["stop_name"]
 				print(
-					f"Upcoming departures: {len(items)} "
+					f"Upcoming departures at {stop_name}: {len(items)} "
 					f"(realtime feed {items[0]['feed_fetched_at'].astimezone(MELBOURNE_TZ).strftime('%H:%M:%S')})"
 				)
 				for item in items:
@@ -507,10 +566,10 @@ def main():
 					}
 					save_observation(row)
 					print(
-						f"{row['stop_name']} | "
 						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | "
+						f"{item['route_long_name']} | "
 						f"To {row['direction']} | "
-						f"departure={local_departure.strftime('%H:%M:%S')} "
+						f"{local_departure.strftime('%H:%M:%S')} "
 						f"({_colored_status(item['delay_seconds'], item['realtime'])}) "
 						f" | {'realtime' if item['realtime'] else 'scheduled'}"
 					)
