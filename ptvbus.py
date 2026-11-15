@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 from zipfile import ZipFile
@@ -58,7 +59,7 @@ DEBUG_REALTIME = False
 CALCULATE_DELAY_FROM_TIMESTAMP = False
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 PRINT_LONG_NAME = False
-PRINT_DISRUPTION = True
+PRINT_DISRUPTION = False
 # ---------------------------------------------------------------------------
 
 _static_info = None
@@ -376,11 +377,31 @@ def _print_disruptions():
 			"User-Agent": "ptv-punctuality-tracker/1.0",
 		},
 	)
-	with urlopen(request, timeout=20) as response:
-		feed = gtfs_realtime_pb2.FeedMessage()
-		feed.ParseFromString(response.read())
+	try:
+		with urlopen(request, timeout=20) as response:
+			feed = gtfs_realtime_pb2.FeedMessage()
+			feed.ParseFromString(response.read())
+	except HTTPError as error:
+		print(
+			f"Disruption feed unavailable (HTTP {error.code}); "
+			"continuing without disruption alerts.",
+			file=sys.stderr,
+		)
+		return
+	except URLError as error:
+		print(
+			f"Disruption feed unavailable ({error.reason}); "
+			"continuing without disruption alerts.",
+			file=sys.stderr,
+		)
+		return
 
 	stop_keys = _stop_keys(STOP_ID)
+	static_info = _load_static_info()
+	station_route_ids = {
+		trip["route_id"] for trip_id, trip in static_info["trips"].items()
+		if trip_id in static_info["stop_times"]
+	}
 	alerts = []
 	for entity in feed.entity:
 		if not entity.HasField("alert"):
@@ -394,6 +415,7 @@ def _print_disruptions():
 		)
 		matches_route = any(
 			item.route_id == str(ROUTE_ID)
+			or item.route_id in station_route_ids
 			for item in entities
 			if item.route_id
 		)
@@ -403,7 +425,9 @@ def _print_disruptions():
 		description = _alert_text(alert.description_text)
 		effect = alert.effect
 		effect_name = gtfs_realtime_pb2.Alert.Effect.Name(effect)
-		alerts.append((effect_name, header or description, description))
+		alert = (effect_name, header or description, description)
+		if alert not in alerts:
+			alerts.append(alert)
 
 	if not alerts:
 		return
