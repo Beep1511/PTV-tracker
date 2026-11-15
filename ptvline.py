@@ -5,7 +5,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:BAT-V"  # Example: Set a V/Line GTFS station ID.
+STOP_ID = "vic:rail:SSS"  # Example: Set a V/Line GTFS station ID.
 ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
@@ -21,7 +21,7 @@ API_URL = (
 )
 API_KEY_HEADER = "KeyId"
 DEBUG_REALTIME = True
-
+PRINT_LONG_NAME = False
 
 def main():
 	_common.PTV_API_KEY = PTV_API_KEY
@@ -40,6 +40,7 @@ def main():
 	_common.DEBUG_REALTIME = DEBUG_REALTIME
 	_common._static_info = None
 	_common._realtime_debug_reported = False
+	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
 	_common.main()
 
 

@@ -19,7 +19,7 @@ Examples
 "vic:rail:WTL" - Westall
 "vic:rail:FKN" - Frankston
 """
-ROUTE_ID = None  # e.g. aus:vic:vic-02-FKN for Frankston Line, aus:vic:vic-02-FKN-R for Frankston Line Replacement Bus
+ROUTE_ID = None
 RUN_ID = None
 POLL_SECONDS = 30
 MAX_RESULTS = 20
@@ -34,6 +34,7 @@ STATIC_ARCHIVE_NAMES = {
 STATIC_MODE = "metro"
 STATIC_GTFS_ZIP = BASE_DIR / "transport_victoria_gtfs.zip"
 STATIC_GTFS_URL = "https://data.ptv.vic.gov.au/downloads/gtfs.zip"
+PRINT_LONG_NAME = False
 
 
 def main():
@@ -50,6 +51,7 @@ def main():
 	_common.STATIC_GTFS_ZIP = STATIC_GTFS_ZIP
 	_common.STATIC_GTFS_URL = STATIC_GTFS_URL
 	_common._static_info = None
+	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
 	_common.main()
 
 

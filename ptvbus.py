@@ -27,7 +27,7 @@ except ImportError as error:
 # ----------------------------- configuration -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PTV_API_KEY = ""                         # Transport Victoria API key UUID
-STOP_ID = 19800                                # e.g. 1127
+STOP_ID = 51645                                # e.g. 1127
 """
 Examples
 15967 Marlborough Street Reserve/Marlborough St | To Chadstone
@@ -36,7 +36,7 @@ Examples
 16372 Centre Rd/Second St | To Westall
 6220 Murrumbeena Rd/North Rd | To Monash
 """
-ROUTE_ID = None                                 # e.g. None = all buses     Route ID 49-630-aus-1(for 630), not route number like 630
+ROUTE_ID = None                                 # e.g. None = all buses     Route ID, not route number like 630 (I don't know what it should look like )
 RUN_ID = None                                   # exact trip ID, if known
 POLL_SECONDS = 30
 MAX_RESULTS = 20
@@ -55,7 +55,9 @@ API_URL = (
 )
 API_KEY_HEADER = "KeyID"
 DEBUG_REALTIME = False
+CALCULATE_DELAY_FROM_TIMESTAMP = False
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
+PRINT_LONG_NAME = False
 # ---------------------------------------------------------------------------
 
 _static_info = None
@@ -256,8 +258,6 @@ def _colored_route(route_name, route_id, routes):
 def _colored_status(delay_seconds, realtime):
 	"""Color realtime status without inventing a delay."""
 	status = _format_delay(delay_seconds)
-	if realtime and delay_seconds is None:
-		status = "realtime time"
 	if not sys.stdout.isatty() or os.environ.get("NO_COLOR") is not None:
 		return status
 	if delay_seconds is not None and delay_seconds > 0:
@@ -312,8 +312,8 @@ def _is_terminal_at_stop(headsign, static_info):
 	if not headsign_words:
 		return False
 	ignored_suffixes = {
-		"airport", "arrivals", "bay", "bus", "dr", "drive", "express",
-		"railway", "road", "station", "st", "street", "stop", "terminal",
+		"airport", "arrivals", "bay", "bus", "express",
+		"railway", "station", "stop", "terminal",
 		"t1", "t2", "t3", "t4", "skybus",
 	}
 	for stop_name in stop_names:
@@ -388,9 +388,13 @@ def departures():
 					datetime.fromtimestamp(
 						update.arrival.time, timezone.utc
 					),
-					update.arrival.delay
-					if update.arrival.HasField("delay")
-					else None,
+					None
+					if CALCULATE_DELAY_FROM_TIMESTAMP
+					else (
+						update.arrival.delay
+						if update.arrival.HasField("delay")
+						else None
+					),
 				)
 				if update.HasField("arrival")
 				and update.arrival.HasField("time")
@@ -401,9 +405,13 @@ def departures():
 					datetime.fromtimestamp(
 						update.departure.time, timezone.utc
 					),
-					update.departure.delay
-					if update.departure.HasField("delay")
-					else None,
+					None
+					if CALCULATE_DELAY_FROM_TIMESTAMP
+					else (
+						update.departure.delay
+						if update.departure.HasField("delay")
+						else None
+					),
 				)
 				if update.HasField("departure")
 				and update.departure.HasField("time")
@@ -467,7 +475,29 @@ def departures():
 			scheduled_departure,
 			None,
 		)
-		estimated = departure or arrival
+		if CALCULATE_DELAY_FROM_TIMESTAMP:
+			arrival_delay = (
+				int((arrival - scheduled_arrival).total_seconds())
+				if realtime_arrival is not None
+				else None
+			)
+			delay = (
+				int((departure - scheduled_departure).total_seconds())
+				if realtime_departure is not None
+				else None
+			)
+		if CALCULATE_DELAY_FROM_TIMESTAMP:
+			estimated = (
+				departure
+				if realtime_departure is not None
+				else arrival
+				if realtime_arrival is not None
+				else scheduled_departure
+			)
+			if realtime_departure is None and realtime_arrival is not None:
+				delay = arrival_delay
+		else:
+			estimated = departure
 		if estimated < datetime.now(timezone.utc):
 			continue
 		static_items.append(
@@ -568,10 +598,13 @@ def main():
 				stop_name = _load_static_info()["stops"].get(
 					str(STOP_ID), f"stop {STOP_ID}"
 				)
-				print(
-					f"No upcoming departures at {stop_name} "
-					f"(stop {STOP_ID})."
-				)
+				if stop_name == str(STOP_ID):
+					print(f"{STOP_ID} not found.")
+				else:
+					print(
+						f"No upcoming departures at {stop_name} "
+						f"(stop {STOP_ID})."
+					)
 			else:
 				stop_name = items[0]["stop_name"]
 				print(
@@ -612,18 +645,34 @@ def main():
 					save_observation(row)
 					if row['route_name'] == "Skybus - Melbourne Airport - Melbourne City":
 						row['route_name'] = "MCE"
-					if row['route_name'] == "Skybus - Melbourne Airport - Sunshine Railway Station":
+						if row['direction'] != "Melbourne Airport":
+							row['direction'] = "Melbourne City Express"
+					elif row['route_name'] == "Skybus - Melbourne Airport - Sunshine Railway Station":
 						row['route_name'] = "SSX"
-					if row['route_name'] == "Skybus - Melbourne Airport - Frankston":
+						if row['direction'] != "Melbourne Airport":
+							row['direction'] = "Sunshine Express"
+					elif row['route_name'] == "Skybus - Melbourne Airport - Frankston":
 						row['route_name'] = "PEX"
-					if row['route_name'] == "SkyBus Eastern Express":
+						if row['direction'] != "Melbourne Airport":
+							row['direction'] = "PENINSULA EXPRESS to " + row['direction']
+					elif row['route_name'] == "SkyBus Eastern Express":
 						row['route_name'] = "EEX"
-					if row['route_name'] == "Skybus - Avalon Airport - Melbourne City":
+						if row['direction'] != "Melbourne Airport":
+							row['direction'] = "EASTERN EXPRESS to " + row['direction']
+					elif row['route_name'] == "Skybus - Avalon Airport - Melbourne City":
 						row['route_name'] = "AVV"
+					else:
+						row['direction'] = "To " + row['direction']
 					print(
-						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | "
-						f"{item['route_long_name']} | "
-						f"To {row['direction']} | "
+						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | ",
+						end = ""
+					)
+					print(
+						f"{item['route_long_name']} | " if PRINT_LONG_NAME else "",
+						end = ""
+					)
+					print(
+						f"{row['direction']} | "
 						f"{local_departure.strftime('%H:%M:%S')} "
 						f"({_colored_status(item['delay_seconds'], item['realtime'])}) "
 						f" | {'realtime' if item['realtime'] else 'scheduled'}"

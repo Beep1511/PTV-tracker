@@ -5,7 +5,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = 45511  # Melbourne Airport T1 Skybus/Arrival Dr
+STOP_ID = 901
 """
 SkyBus stop examples:
 23173, 23175, 23183 - Skybus Coach Terminal/Spencer St
@@ -28,7 +28,7 @@ API_URL = (
 	"opendata/public-transport/gtfs/realtime/v1/bus/trip-updates"
 )
 API_KEY_HEADER = "KeyID"
-
+PRINT_LONG_NAME = False
 
 def main():
 	_common.PTV_API_KEY = PTV_API_KEY
@@ -48,6 +48,7 @@ def main():
 	# not guaranteed. Show one diagnostic so an empty match is explainable.
 	_common.DEBUG_REALTIME = True
 	_common._static_info = None
+	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
 	_common.main()
 
 
