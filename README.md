@@ -156,9 +156,21 @@ https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtim
 ```
 
 Tram realtime updates can provide a predicted timestamp without a numeric
-delay value. The tracker still uses that timestamp and labels the departure
-`realtime time`; it does not calculate or claim an early/late value when the
-feed does not provide one.
+delay value. The tracker calculates the delay from that timestamp and the
+static schedule; it does not read or infer a delay field from the Tram feed.
+
+All launchers also support:
+
+```python
+PRINT_DISRUPTION = True
+```
+
+When enabled, the tracker requests the matching GTFS-Realtime service-alerts
+feed once at startup and prints disruptions affecting the configured stop.
+Alerts are not repeated on every refresh. Critical effects such as
+`NO_SERVICE`, `SIGNIFICANT_DELAYS`, and `STOP_MOVED` are shown in red in an
+interactive terminal; other alerts are shown in yellow. Set the option to
+`False` to disable this output.
 
 ## Running the V/Line tracker
 

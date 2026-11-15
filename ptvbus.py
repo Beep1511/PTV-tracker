@@ -58,6 +58,7 @@ DEBUG_REALTIME = False
 CALCULATE_DELAY_FROM_TIMESTAMP = False
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 PRINT_LONG_NAME = False
+PRINT_DISRUPTION = True
 # ---------------------------------------------------------------------------
 
 _static_info = None
@@ -350,6 +351,78 @@ def _ptv_get():
 		return feed
 
 
+def _disruption_url():
+	"""Return the service-alerts endpoint matching the realtime mode."""
+	return API_URL.rsplit("/", 1)[0] + "/service-alerts"
+
+
+def _alert_text(translated):
+	"""Return the first usable translated GTFS-RT alert text."""
+	for item in translated.translation:
+		if item.text:
+			return item.text
+	return ""
+
+
+def _print_disruptions():
+	"""Print current alerts affecting the configured stop, once at startup."""
+	if not PRINT_DISRUPTION:
+		return
+	request = Request(
+		_disruption_url(),
+		headers={
+			API_KEY_HEADER: PTV_API_KEY,
+			"Accept": "application/x-protobuf",
+			"User-Agent": "ptv-punctuality-tracker/1.0",
+		},
+	)
+	with urlopen(request, timeout=20) as response:
+		feed = gtfs_realtime_pb2.FeedMessage()
+		feed.ParseFromString(response.read())
+
+	stop_keys = _stop_keys(STOP_ID)
+	alerts = []
+	for entity in feed.entity:
+		if not entity.HasField("alert"):
+			continue
+		alert = entity.alert
+		entities = list(alert.informed_entity)
+		matches_stop = any(
+			stop_keys & _stop_keys(item.stop_id)
+			for item in entities
+			if item.stop_id
+		)
+		matches_route = any(
+			item.route_id == str(ROUTE_ID)
+			for item in entities
+			if item.route_id
+		)
+		if entities and not (matches_stop or matches_route):
+			continue
+		header = _alert_text(alert.header_text)
+		description = _alert_text(alert.description_text)
+		effect = alert.effect
+		effect_name = gtfs_realtime_pb2.Alert.Effect.Name(effect)
+		alerts.append((effect_name, header or description, description))
+
+	if not alerts:
+		return
+	print("Disruptions:")
+	for effect, header, description in alerts:
+		message = header or "No additional details"
+		if description and description != header:
+			message += f" - {description}"
+		if sys.stdout.isatty() and os.environ.get("NO_COLOR") is None:
+			color = (
+				"\033[91m"
+				if effect in {"NO_SERVICE", "SIGNIFICANT_DELAYS", "STOP_MOVED"}
+				else "\033[93m"
+			)
+			print(f"{color}[{effect}] {message}\033[0m")
+		else:
+			print(f"[{effect}] {message}")
+
+
 def departures():
 	"""Return scheduled departures, overlaid with available realtime updates."""
 	global _realtime_debug_reported
@@ -591,6 +664,7 @@ def main():
 		f"Tracking stop {STOP_ID}; refreshing every {POLL_SECONDS} seconds. "
 		"Press Ctrl+C to stop."
 	)
+	_print_disruptions()
 	while True:
 		try:
 			items = departures()

@@ -29,6 +29,7 @@ API_URL = (
 )
 API_KEY_HEADER = "KeyID"
 PRINT_LONG_NAME = False
+PRINT_DISRUPTION = True
 
 def main():
 	_common.PTV_API_KEY = PTV_API_KEY
@@ -49,6 +50,7 @@ def main():
 	_common.DEBUG_REALTIME = True
 	_common._static_info = None
 	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
+	_common.PRINT_DISRUPTION = PRINT_DISRUPTION
 	_common.main()
 
 

@@ -35,6 +35,7 @@ STATIC_MODE = "metro"
 STATIC_GTFS_ZIP = BASE_DIR / "transport_victoria_gtfs.zip"
 STATIC_GTFS_URL = "https://data.ptv.vic.gov.au/downloads/gtfs.zip"
 PRINT_LONG_NAME = False
+PRINT_DISRUPTION = True
 
 
 def main():
@@ -52,6 +53,7 @@ def main():
 	_common.STATIC_GTFS_URL = STATIC_GTFS_URL
 	_common._static_info = None
 	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
+	_common.PRINT_DISRUPTION = PRINT_DISRUPTION
 	_common.main()
 
 
