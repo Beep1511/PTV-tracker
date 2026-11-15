@@ -37,6 +37,21 @@ matching realtime update is available):
 - [ ] The Overland
 
 
+All launchers also support:
+
+```python
+PRINT_DISRUPTION = True
+```
+
+When enabled, the tracker requests the matching GTFS-Realtime service-alerts
+feed once at startup and prints disruptions affecting the configured stop.
+Alerts are not repeated on every refresh. Critical effects such as
+`NO_SERVICE`, `SIGNIFICANT_DELAYS`, and `STOP_MOVED` are shown in red in an
+interactive terminal; other alerts are shown in yellow. Set the option to
+`False` to disable this output.
+
+However, in the new GTFS Realtime API, disruption alerts (Service Alerts) are currently limited to Metro Trains (with partial support for Metro Trams).
+
 
 ## Requirements
 
@@ -159,18 +174,7 @@ Tram realtime updates can provide a predicted timestamp without a numeric
 delay value. The tracker calculates the delay from that timestamp and the
 static schedule; it does not read or infer a delay field from the Tram feed.
 
-All launchers also support:
 
-```python
-PRINT_DISRUPTION = True
-```
-
-When enabled, the tracker requests the matching GTFS-Realtime service-alerts
-feed once at startup and prints disruptions affecting the configured stop.
-Alerts are not repeated on every refresh. Critical effects such as
-`NO_SERVICE`, `SIGNIFICANT_DELAYS`, and `STOP_MOVED` are shown in red in an
-interactive terminal; other alerts are shown in yellow. Set the option to
-`False` to disable this output.
 
 ## Running the V/Line tracker
 
