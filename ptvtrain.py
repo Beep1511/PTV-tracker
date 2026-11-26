@@ -10,7 +10,7 @@ import ptvbus as _common
 
 BASE_DIR = _common.Path(__file__).resolve().parent
 PTV_API_KEY = ""
-STOP_ID = "vic:rail:SSS"  # Melbourne train station GTFS stop ID
+STOP_ID = "vic:rail:FSY"  # Melbourne train station GTFS stop ID
 """
 Examples
 "vic:rail:RMD" - Richmond
@@ -36,6 +36,8 @@ STATIC_GTFS_ZIP = BASE_DIR / "transport_victoria_gtfs.zip"
 STATIC_GTFS_URL = "https://data.ptv.vic.gov.au/downloads/gtfs.zip"
 PRINT_LONG_NAME = False
 PRINT_DISRUPTION = True
+CLEAR_TERMINAL = False
+SHOW_MAP = False
 
 
 def main():
@@ -54,6 +56,8 @@ def main():
 	_common._static_info = None
 	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
 	_common.PRINT_DISRUPTION = PRINT_DISRUPTION
+	_common.CLEAR_TERMINAL = CLEAR_TERMINAL
+	_common.SHOW_MAP = SHOW_MAP
 	_common.main()
 
 

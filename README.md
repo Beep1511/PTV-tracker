@@ -1,4 +1,3 @@
-
 # PTV Tracker
 
 Track upcoming Public Transport Victoria (PTV) bus and Melbourne Metro train
@@ -13,8 +12,15 @@ PTV `devid` parameter or HMAC signing.
 - Monitor bus stops or Melbourne Metro train stations.
 - Monitor Yarra Tram stops and V/Line stations with their dedicated realtime
   feeds.
+- Combine Metro and V/Line departures at one station with `ptvrail.py`.
 - Display the public route or train line, destination, local Melbourne time,
   and delay status.
+- Show GTFS platform or bay labels for individual departures when available.
+- Optionally open a local, zoomable map of route stops with estimated vehicle
+  positions. Estimates are based on timetable/realtime delay data and are not
+  GPS positions.
+- Filter by GTFS route ID, route number, or route name; matching is
+  case-insensitive.
 - Show all upcoming departures at a location, not only the first one.
 - Combine the official static GTFS schedule with GTFS-Realtime updates.
   Scheduled services remain visible even when the realtime feed has no update.
@@ -24,6 +30,7 @@ PTV `devid` parameter or HMAC signing.
 - Refresh the realtime feed every 30 seconds by default.
 - Use GTFS route colors for terminal route labels and color-code realtime
   status: red for late, orange for early, and green for realtime on time.
+- **This document might not contain every features in the program, explore!**
 
 Supported modes (some services may provide scheduled times only when no
 matching realtime update is available):
@@ -35,7 +42,6 @@ matching realtime update is available):
 - [X] V/Lines
 - [X] SkyBus
 - [ ] The Overland
-
 
 All launchers also support:
 
@@ -147,6 +153,32 @@ The Metro train tracker uses:
 ```text
 https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates
 ```
+
+## Running the combined Metro and V/Line tracker
+
+Use `ptvrail.py` to combine Metro and V/Line departures in one chronological
+list. Configure one shared stop ID and, optionally, a route filter:
+
+```python
+PTV_API_KEY = "your-api-key-uuid"
+STOP_ID = "vic:rail:SSS"
+ROUTE_ID = None  # Or a route ID/name, e.g. "Cranbourne Line"
+SHOW_MAP = False
+```
+
+Set `ROUTE_ID` to a GTFS route ID, short name, or long name. For example,
+`"Cranbourne Line"` selects the Metro line by its name. The match is
+case-insensitive. `None` includes all routes.
+
+Run the combined tracker with:
+
+```powershell
+python -u .\ptvrail.py
+```
+
+The same `STOP_ID` is used for both feeds. Choose an ID that exists in the
+Metro and V/Line GTFS schedules if you expect both modes to return departures.
+The output combines and sorts their departures by time.
 
 ## Running the tram tracker
 
@@ -272,8 +304,9 @@ All generated files are stored next to the scripts:
 - `ptv_tram_punctuality.csv` - tram observations
 - `ptv_vline_punctuality.csv` - V/Line observations
 - `ptv_skybus_punctuality.csv` - SkyBus observations
+- `ptv_metro_punctuality.csv` - Metro observations from `ptvrail.py`
 - `transport_victoria_gtfs.zip` - downloaded static GTFS data
-- `transport_victoria_gtfs_*.cache` - parsed static GTFS indexes
+- `cache/` - parsed static GTFS indexes, stored beside the scripts
 
 The generated files are ignored by Git. The GTFS archive is large and should
 not be committed. The static index is invalidated automatically when the GTFS
@@ -282,12 +315,18 @@ archive changes or the configured stop/mode changes.
 ## Configuration notes
 
 - `ROUTE_ID = None` monitors all routes at the stop.
-- Set `ROUTE_ID` to a route ID from the static GTFS data to filter results.
+- Set `ROUTE_ID` to a GTFS route ID, route number/short name, or route name
+  (case-insensitive) to filter results.
 - `RUN_ID = None` monitors all trips. Set it only when tracking one exact
   trip ID.
 - `POLL_SECONDS` controls how often the realtime feed is requested. The API
   has rate limits; do not reduce it unnecessarily.
 - `MAX_RESULTS` limits the number of upcoming departures displayed and logged.
+- Set `SHOW_MAP = True` in a launcher to open a local browser map alongside
+  terminal output. The map can be panned and zoomed, shows GTFS route stops,
+  and estimates vehicles between stops from scheduled times and available
+  realtime delays. It does not show GPS positions and does not use an external
+  map tile service. Keep `ptvmap.py` beside the tracker scripts.
 
 The terminal output uses departure time because that is the time passengers
 use when deciding whether they can catch the service. Arrival time and its

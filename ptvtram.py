@@ -23,6 +23,8 @@ API_KEY_HEADER = "KeyID"
 DEBUG_REALTIME = True
 PRINT_LONG_NAME = False
 PRINT_DISRUPTION = True
+CLEAR_TERMINAL = False
+SHOW_MAP = False
 
 def main():
 	_common.PTV_API_KEY = PTV_API_KEY
@@ -44,6 +46,8 @@ def main():
 	_common._realtime_debug_reported = False
 	_common.PRINT_LONG_NAME = PRINT_LONG_NAME
 	_common.PRINT_DISRUPTION = PRINT_DISRUPTION
+	_common.CLEAR_TERMINAL = CLEAR_TERMINAL
+	_common.SHOW_MAP = SHOW_MAP
 	_common.main()
 
 

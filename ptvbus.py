@@ -9,6 +9,7 @@ import os
 import pickle
 import re
 import sys
+import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -28,7 +29,7 @@ except ImportError as error:
 # ----------------------------- configuration -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PTV_API_KEY = ""                         # Transport Victoria API key UUID
-STOP_ID = 51645                                # e.g. 1127
+STOP_ID = 16372                                # e.g. 1127
 """
 Examples
 15967 Marlborough Street Reserve/Marlborough St | To Chadstone
@@ -37,7 +38,7 @@ Examples
 16372 Centre Rd/Second St | To Westall
 6220 Murrumbeena Rd/North Rd | To Monash
 """
-ROUTE_ID = None                                 # e.g. None = all buses     Route ID, not route number like 630 (I don't know what it should look like )
+ROUTE_ID = None                                 # route_id, route number, or GTFS name (case-insensitive)
 RUN_ID = None                                   # exact trip ID, if known
 POLL_SECONDS = 30
 MAX_RESULTS = 20
@@ -60,10 +61,13 @@ CALCULATE_DELAY_FROM_TIMESTAMP = False
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 PRINT_LONG_NAME = False
 PRINT_DISRUPTION = False
+CLEAR_TERMINAL = False
+SHOW_MAP = True
 # ---------------------------------------------------------------------------
 
 _static_info = None
 _realtime_debug_reported = False
+_map_window = None
 
 
 def _load_static_info():
@@ -73,9 +77,10 @@ def _load_static_info():
 		return _static_info
 	mode = STATIC_MODE
 	cache_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(STOP_ID))
-	cache_file = BASE_DIR / f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache"
+	cache_dir = BASE_DIR / "cache"
+	cache_file = cache_dir / f"{STATIC_GTFS_ZIP.stem}_{mode}_{cache_name}.cache"
 	cache_signature = (
-		4,
+		8,
 		STATIC_GTFS_ZIP.stat().st_mtime_ns if STATIC_GTFS_ZIP.exists() else None,
 		str(STOP_ID),
 		tuple(sorted(STATIC_ARCHIVE_NAMES)),
@@ -106,11 +111,16 @@ def _load_static_info():
 			if name in STATIC_ARCHIVE_NAMES
 		]
 		stops = {}
+		platforms = {}
+		stop_coordinates = {}
+		stop_parents = {}
 		routes = {}
 		trips = {}
 		stop_times = {}
+		trip_stops = {}
 		calendar = {}
 		calendar_dates = {}
+		route_aliases = {}
 		stop_ids = set()
 		try:
 			for schedule in schedule_archives:
@@ -120,6 +130,19 @@ def _load_static_info():
 						(line.decode("utf-8-sig") for line in file)
 					):
 						stops[row["stop_id"]] = row["stop_name"]
+						platforms[row["stop_id"]] = row.get(
+							"platform_code", ""
+						).strip()
+						stop_parents[row["stop_id"]] = row.get(
+							"parent_station", ""
+						)
+						try:
+							stop_coordinates[row["stop_id"]] = (
+								float(row["stop_lat"]),
+								float(row["stop_lon"]),
+							)
+						except (KeyError, ValueError):
+							pass
 						schedule_stops.append(row)
 
 				stop_ids.update(
@@ -139,10 +162,24 @@ def _load_static_info():
 								or row.get("route_long_name")
 								or row["route_id"]
 							),
+							"short_name": row.get("route_short_name", "").strip(),
 							"long_name": row.get("route_long_name", ""),
 							"color": row.get("route_color", ""),
 							"text_color": row.get("route_text_color", ""),
 						}
+
+				for route_id, route in routes.items():
+					for alias in (
+						route_id,
+						route["short_name"],
+						route["long_name"],
+						route["name"],
+					):
+						normalized_alias = alias.strip().casefold()
+						if normalized_alias:
+							route_aliases.setdefault(
+								normalized_alias, set()
+							).add(route_id)
 
 				with schedule.open("stop_times.txt") as file:
 					for row in csv.DictReader(
@@ -152,7 +189,23 @@ def _load_static_info():
 							stop_times[row["trip_id"]] = {
 								"arrival": row["arrival_time"],
 								"departure": row["departure_time"],
+								"stop_id": row["stop_id"],
 							}
+
+				relevant_trip_ids = set(stop_times)
+				with schedule.open("stop_times.txt") as file:
+					for row in csv.DictReader(
+						(line.decode("utf-8-sig") for line in file)
+					):
+						if row["trip_id"] in relevant_trip_ids:
+							trip_stops.setdefault(row["trip_id"], []).append(
+								{
+									"stop_id": row["stop_id"],
+									"arrival": row["arrival_time"],
+									"departure": row["departure_time"],
+									"sequence": int(row["stop_sequence"]),
+								}
+							)
 
 				with schedule.open("trips.txt") as file:
 					for row in csv.DictReader(
@@ -163,6 +216,7 @@ def _load_static_info():
 								"route_id": row["route_id"],
 								"headsign": row.get("trip_headsign", ""),
 								"service_id": row["service_id"],
+								"shape_id": row.get("shape_id", ""),
 							}
 
 				with schedule.open("calendar.txt") as file:
@@ -182,16 +236,51 @@ def _load_static_info():
 			for schedule in schedule_archives:
 				schedule.close()
 
+		station_groups = {}
+		for stop_id, parent_id in stop_parents.items():
+			stop_name = stops.get(stop_id, "").casefold()
+			if (
+				parent_id
+				and stop_id in stop_coordinates
+				and "replacement" not in stop_name
+			):
+				station_groups.setdefault(parent_id, []).append(stop_id)
+		for parent_id, child_ids in station_groups.items():
+			station_coordinate = stop_coordinates.get(parent_id)
+			if station_coordinate is None:
+				locations = [
+					stop_coordinates[stop_id] for stop_id in child_ids
+				]
+				station_coordinate = (
+					sum(point[0] for point in locations) / len(locations),
+					sum(point[1] for point in locations) / len(locations),
+				)
+			station_coordinate = tuple(
+				round(value, 5) for value in station_coordinate
+			)
+			for stop_id in child_ids:
+				stop_coordinates[stop_id] = station_coordinate
+		stop_coordinates = {
+			stop_id: tuple(round(value, 5) for value in coordinate)
+			for stop_id, coordinate in stop_coordinates.items()
+		}
+
 	_static_info = {
 		"stops": stops,
+		"platforms": platforms,
+		"stop_coordinates": stop_coordinates,
+		"stop_parents": stop_parents,
 		"routes": routes,
+		"route_aliases": route_aliases,
 		"trips": trips,
 		"stop_times": stop_times,
+		"trip_stops": trip_stops,
 		"calendar": calendar,
 		"calendar_dates": calendar_dates,
 		"stop_ids": stop_ids,
 	}
 	try:
+		cache_dir.mkdir(exist_ok=True)
 		with cache_file.open("wb") as file:
 			pickle.dump((cache_signature, _static_info), file)
 	except OSError:
@@ -214,6 +303,45 @@ def _route_name(route_id, routes):
 		if candidates:
 			return max(candidates, key=lambda info: len(info["name"]))["name"]
 	return route_id
+
+
+def _resolve_route_ids(static_info, selector):
+	"""Resolve a GTFS route ID, short name, or long name case-insensitively."""
+	if selector is None:
+		return None
+	normalized = str(selector).strip().casefold()
+	aliases = static_info.get("route_aliases")
+	if aliases is not None:
+		return set(aliases.get(normalized, ()))
+	return {
+		route_id
+		for route_id, route in static_info["routes"].items()
+		if normalized
+		in {
+			route_id.strip().casefold(),
+			route.get("short_name", "").strip().casefold(),
+			route.get("long_name", "").strip().casefold(),
+			route.get("name", "").strip().casefold(),
+		}
+	}
+
+
+def _route_display_name(route_id, routes, selector=None):
+	"""Prefer a configured human-readable route name in departure output."""
+	route = routes.get(route_id, {})
+	if selector is not None:
+		normalized = str(selector).strip().casefold()
+		for key in ("long_name", "short_name", "name"):
+			name = route.get(key, "").strip()
+			if name and name.casefold() == normalized:
+				return name
+	return _route_name(route_id, routes)
+
+
+def _map_color(value, fallback):
+	"""Return a valid CSS color from a GTFS six-digit color."""
+	value = str(value or "").strip().lstrip("#")
+	return f"#{value}" if re.fullmatch(r"[0-9a-fA-F]{6}", value) else fallback
 
 
 def _route_colors(route_id, routes):
@@ -300,6 +428,25 @@ def _normalise_location(value):
 	value = re.sub(r"\([^)]*\)", " ", value.casefold())
 	value = re.sub(r"[^a-z0-9]+", " ", value)
 	return value.split()
+
+
+def _clear_terminal():
+	"""Clear the interactive terminal when enabled."""
+	if CLEAR_TERMINAL and sys.stdout.isatty():
+		print("\033[2J\033[H", end="", flush=True)
+
+
+def _platform_label(platform_code):
+	"""Format a GTFS platform code according to the configured mode."""
+	if not platform_code:
+		return ""
+	code = platform_code.strip()
+	if not code:
+		return ""
+	if code.casefold().startswith(("bay ", "platform ")):
+		return code
+	prefix = "Platform" if STATIC_MODE in {"metro", "vline"} else "Bay"
+	return f"{prefix} {code}"
 
 
 def _is_terminal_at_stop(headsign, static_info):
@@ -398,11 +545,17 @@ def _print_disruptions():
 
 	stop_keys = _stop_keys(STOP_ID)
 	static_info = _load_static_info()
+	selected_route_ids = _resolve_route_ids(static_info, ROUTE_ID)
+	if ROUTE_ID is not None and not selected_route_ids:
+		raise ValueError(
+			f"ROUTE_ID {ROUTE_ID!r} did not match a route ID, short name, "
+			"or long name in the selected GTFS archive."
+		)
 	station_route_ids = {
 		trip["route_id"] for trip_id, trip in static_info["trips"].items()
 		if trip_id in static_info["stop_times"]
 	}
-	alerts = []
+	alerts = {}
 	for entity in feed.entity:
 		if not entity.HasField("alert"):
 			continue
@@ -414,8 +567,17 @@ def _print_disruptions():
 			if item.stop_id
 		)
 		matches_route = any(
-			item.route_id == str(ROUTE_ID)
-			or item.route_id in station_route_ids
+			(
+				item.route_id in station_route_ids
+				and (
+					selected_route_ids is None
+					or item.route_id in selected_route_ids
+				)
+			)
+			or (
+				selected_route_ids is not None
+				and item.route_id in selected_route_ids
+			)
 			for item in entities
 			if item.route_id
 		)
@@ -425,26 +587,58 @@ def _print_disruptions():
 		description = _alert_text(alert.description_text)
 		effect = alert.effect
 		effect_name = gtfs_realtime_pb2.Alert.Effect.Name(effect)
-		alert = (effect_name, header or description, description)
-		if alert not in alerts:
-			alerts.append(alert)
+		key = (effect_name, header or description, description)
+		route_ids = {
+			item.route_id
+			for item in entities
+			if item.route_id
+			and (
+				(
+					item.route_id in station_route_ids
+					and (
+						selected_route_ids is None
+						or item.route_id in selected_route_ids
+					)
+				)
+				or (
+					selected_route_ids is not None
+					and item.route_id in selected_route_ids
+				)
+			)
+		}
+		if key not in alerts:
+			alerts[key] = set()
+		alerts[key].update(route_ids)
 
 	if not alerts:
 		return
 	print("Disruptions:")
-	for effect, header, description in alerts:
+	for (effect, header, description), route_ids in alerts.items():
 		message = header or "No additional details"
 		if description and description != header:
 			message += f" - {description}"
-		if sys.stdout.isatty() and os.environ.get("NO_COLOR") is None:
-			color = (
-				"\033[91m"
-				if effect in {"NO_SERVICE", "SIGNIFICANT_DELAYS", "STOP_MOVED"}
-				else "\033[93m"
-			)
-			print(f"{color}[{effect}] {message}\033[0m")
+		if route_ids:
+			line_labels = [
+				_colored_route(
+					_route_name(route_id, static_info["routes"]),
+					route_id,
+					static_info["routes"],
+				)
+				for route_id in sorted(route_ids)
+			]
+			line_prefix = " / ".join(line_labels)
 		else:
-			print(f"[{effect}] {message}")
+			line_prefix = "Network"
+		alert_text = f"[{effect}] {message}"
+		if sys.stdout.isatty() and os.environ.get("NO_COLOR") is None:
+			alert_color = (
+				"\033[38;2;255;135;105m"
+				if effect in {"NO_SERVICE", "SIGNIFICANT_DELAYS", "STOP_MOVED"}
+				else "\033[38;2;255;210;100m"
+			)
+			print(f"{line_prefix} {alert_color}{alert_text}\033[0m")
+		else:
+			print(f"{line_prefix} {alert_text}")
 
 
 def departures():
@@ -453,9 +647,22 @@ def departures():
 	feed = _ptv_get()
 	feed_fetched_at = datetime.now(timezone.utc)
 	static_info = _load_static_info()
-	now_local = datetime.now(MELBOURNE_TZ)
+	selected_route_ids = _resolve_route_ids(static_info, ROUTE_ID)
+	if ROUTE_ID is not None and not selected_route_ids:
+		raise ValueError(
+			f"ROUTE_ID {ROUTE_ID!r} did not match a route ID, short name, "
+			"or long name in the selected GTFS archive."
+		)
+	now_utc = datetime.now(timezone.utc)
+	now_local = now_utc.astimezone(MELBOURNE_TZ)
 	today = now_local.date()
-	realtime = {}
+	service_dates = (
+		today - timedelta(days=1),
+		today,
+		today + timedelta(days=1),
+	)
+	realtime_by_date = {}
+	realtime_without_date = {}
 	realtime_trip_ids = set()
 	feed_trip_count = 0
 	feed_stop_update_count = 0
@@ -473,7 +680,10 @@ def departures():
 		realtime_trip_ids.add(trip.trip_id)
 		if RUN_ID is not None and trip.trip_id != str(RUN_ID):
 			continue
-		if ROUTE_ID is not None and trip.route_id != str(ROUTE_ID):
+		if selected_route_ids is not None and not any(
+			route_id.casefold() == str(trip.route_id).casefold()
+			for route_id in selected_route_ids
+		):
 			continue
 		for update in entity.trip_update.stop_time_update:
 			feed_stop_update_count += 1
@@ -516,11 +726,21 @@ def departures():
 			)
 			if arrival is None and departure is None:
 				continue
+			service_date = (
+				trip.start_date if trip.HasField("start_date") else None
+			)
 			for key in _trip_keys(trip.trip_id):
-				realtime[key] = (
-					arrival,
-					departure,
-				)
+				if service_date:
+					realtime_by_date[
+						(key, service_date, str(update.stop_id))
+					] = (
+						arrival,
+						departure,
+					)
+				else:
+					realtime_without_date.setdefault(
+						(key, str(update.stop_id)), []
+					).append((arrival, departure))
 
 	if DEBUG_REALTIME and not _realtime_debug_reported:
 		static_trip_ids = set(static_info["stop_times"])
@@ -538,90 +758,108 @@ def departures():
 		_realtime_debug_reported = True
 
 	static_items = []
-	for trip_id, departure_time in static_info["stop_times"].items():
-		trip = static_info["trips"].get(trip_id)
-		if trip is None:
-			continue
-		if _is_terminal_at_stop(trip["headsign"], static_info):
-			continue
-		if ROUTE_ID is not None and trip["route_id"] != str(ROUTE_ID):
-			continue
-		if RUN_ID is not None and trip_id != str(RUN_ID):
-			continue
-		if not _service_active(static_info, trip["service_id"], today):
-			continue
-		scheduled_arrival = _gtfs_time(
-			today, departure_time["arrival"]
-		).astimezone(timezone.utc)
-		scheduled_departure = _gtfs_time(
-			today, departure_time["departure"]
-		).astimezone(timezone.utc)
-		realtime_arrival, realtime_departure = next(
-			(
-				realtime[key]
-				for key in _trip_keys(trip_id)
-				if key in realtime
-			),
-			(None, None),
-		)
-		arrival, arrival_delay = realtime_arrival or (
-			scheduled_arrival,
-			None,
-		)
-		departure, delay = realtime_departure or (
-			scheduled_departure,
-			None,
-		)
-		if CALCULATE_DELAY_FROM_TIMESTAMP:
-			arrival_delay = (
-				int((arrival - scheduled_arrival).total_seconds())
-				if realtime_arrival is not None
-				else None
+	for service_day in service_dates:
+		service_date = service_day.strftime("%Y%m%d")
+		for trip_id, departure_time in static_info["stop_times"].items():
+			trip = static_info["trips"].get(trip_id)
+			if trip is None:
+				continue
+			if _is_terminal_at_stop(trip["headsign"], static_info):
+				continue
+			if (
+				selected_route_ids is not None
+				and trip["route_id"] not in selected_route_ids
+			):
+				continue
+			if RUN_ID is not None and trip_id != str(RUN_ID):
+				continue
+			if not _service_active(
+				static_info, trip["service_id"], service_day
+			):
+				continue
+			scheduled_arrival = _gtfs_time(
+				service_day, departure_time["arrival"]
+			).astimezone(timezone.utc)
+			scheduled_departure = _gtfs_time(
+				service_day, departure_time["departure"]
+			).astimezone(timezone.utc)
+			realtime_arrival, realtime_departure = _matching_realtime_update(
+				trip_id,
+				service_date,
+				scheduled_departure,
+				departure_time["stop_id"],
+				realtime_by_date,
+				realtime_without_date,
 			)
-			delay = (
-				int((departure - scheduled_departure).total_seconds())
-				if realtime_departure is not None
-				else None
+			arrival, arrival_delay = realtime_arrival or (
+				scheduled_arrival,
+				None,
 			)
-		if CALCULATE_DELAY_FROM_TIMESTAMP:
-			estimated = (
-				departure
-				if realtime_departure is not None
-				else arrival
-				if realtime_arrival is not None
-				else scheduled_departure
+			departure, delay = realtime_departure or (
+				scheduled_departure,
+				None,
 			)
-			if realtime_departure is None and realtime_arrival is not None:
-				delay = arrival_delay
-		else:
-			estimated = departure
-		if estimated < datetime.now(timezone.utc):
-			continue
-		static_items.append(
-			{
-				"route_id": trip["route_id"],
-				"route_name": _route_name(trip["route_id"], static_info["routes"]),
-				"route_long_name": static_info["routes"].get(
-					trip["route_id"], {}
-				).get("long_name", ""),
-				"run_id": trip_id,
-				"stop_name": static_info["stops"].get(
-					str(STOP_ID), f"stop {STOP_ID}"
-				),
-				"direction": trip["headsign"] or "direction unavailable",
-				"estimated_departure_utc": estimated,
-				"arrival_utc": arrival,
-				"scheduled_arrival_utc": scheduled_arrival,
-				"scheduled_departure_utc": scheduled_departure,
-				"delay_seconds": delay,
-				"arrival_delay_seconds": arrival_delay,
-				"realtime": (
-					realtime_departure is not None
-					or realtime_arrival is not None
-				),
-				"feed_fetched_at": feed_fetched_at,
-			}
-		)
+			if CALCULATE_DELAY_FROM_TIMESTAMP:
+				arrival_delay = (
+					int((arrival - scheduled_arrival).total_seconds())
+					if realtime_arrival is not None
+					else None
+				)
+				delay = (
+					int((departure - scheduled_departure).total_seconds())
+					if realtime_departure is not None
+					else None
+				)
+			if CALCULATE_DELAY_FROM_TIMESTAMP:
+				estimated = (
+					departure
+					if realtime_departure is not None
+					else arrival
+					if realtime_arrival is not None
+					else scheduled_departure
+				)
+				if realtime_departure is None and realtime_arrival is not None:
+					delay = arrival_delay
+			else:
+				estimated = departure
+			if estimated < now_utc:
+				continue
+			static_items.append(
+				{
+					"route_id": trip["route_id"],
+					"route_name": _route_display_name(
+						trip["route_id"],
+						static_info["routes"],
+						ROUTE_ID,
+					),
+					"route_long_name": static_info["routes"].get(
+						trip["route_id"], {}
+					).get("long_name", ""),
+					"run_id": trip_id,
+					"service_date": service_date,
+					"stop_name": static_info["stops"].get(
+						str(STOP_ID), f"stop {STOP_ID}"
+					),
+					"stop_id": departure_time["stop_id"],
+					"platform": _platform_label(
+						static_info["platforms"].get(
+							departure_time["stop_id"], ""
+						)
+					),
+					"direction": trip["headsign"] or "direction unavailable",
+					"estimated_departure_utc": estimated,
+					"arrival_utc": arrival,
+					"scheduled_arrival_utc": scheduled_arrival,
+					"scheduled_departure_utc": scheduled_departure,
+					"delay_seconds": delay,
+					"arrival_delay_seconds": arrival_delay,
+					"realtime": (
+						realtime_departure is not None
+						or realtime_arrival is not None
+					),
+					"feed_fetched_at": feed_fetched_at,
+				}
+			)
 	unique = {}
 	for item in static_items:
 		key = (
@@ -629,13 +867,347 @@ def departures():
 			item["direction"],
 			item["estimated_departure_utc"],
 			item["scheduled_departure_utc"],
+			item["platform"],
 		)
 		previous = unique.get(key)
 		if previous is None or item["realtime"] and not previous["realtime"]:
 			unique[key] = item
+	realtime_items = sorted(
+		(item for item in unique.values() if item["realtime"]),
+		key=lambda item: item["estimated_departure_utc"],
+	)
+	scheduled_items = sorted(
+		(item for item in unique.values() if not item["realtime"]),
+		key=lambda item: item["estimated_departure_utc"],
+	)
+	selected = realtime_items[:MAX_RESULTS]
+	selected.extend(scheduled_items[:MAX_RESULTS - len(selected)])
 	return sorted(
-		unique.values(), key=lambda item: item["estimated_departure_utc"]
-	)[:MAX_RESULTS]
+		selected, key=lambda item: item["estimated_departure_utc"]
+	)
+
+
+def _build_map_data(items):
+	"""Build an offline, coordinate-based map for selected departures."""
+	static_info = _load_static_info()
+	coordinates = static_info["stop_coordinates"]
+	station_ids = [
+		str(STOP_ID),
+		*(
+			stop_id
+			for stop_id, parent in static_info["stop_parents"].items()
+			if parent == str(STOP_ID)
+		),
+	]
+	station_ids = list(dict.fromkeys(station_ids))
+	station_coordinate = next(
+		(coordinates[stop_id] for stop_id in station_ids if stop_id in coordinates),
+		None,
+	)
+	if station_coordinate is None:
+		child_coordinates = [
+			coordinates[stop_id]
+			for stop_id in station_ids[1:]
+			if stop_id in coordinates
+		]
+		if child_coordinates:
+			station_coordinate = (
+				sum(point[0] for point in child_coordinates) / len(child_coordinates),
+				sum(point[1] for point in child_coordinates) / len(child_coordinates),
+			)
+
+	now = datetime.now(timezone.utc)
+	route_lines = {}
+	map_stops = {}
+	vehicles = []
+	seen_vehicles = set()
+	for item in items:
+		trip_id = item["run_id"]
+		trip = static_info["trips"].get(trip_id)
+		trip_stops = static_info["trip_stops"].get(trip_id, [])
+		if trip is None or len(trip_stops) < 2:
+			continue
+
+		stop_points = []
+		for scheduled_stop in trip_stops:
+			stop_id = scheduled_stop["stop_id"]
+			location = coordinates.get(stop_id)
+			if location is None:
+				continue
+			stop_name = (
+				static_info["stops"].get(stop_id, "").strip() or stop_id
+			)
+			platform = _platform_label(
+				static_info["platforms"].get(stop_id, "")
+			)
+			stop_points.append(
+				{
+					"id": stop_id,
+					"name": stop_name,
+					"platform": platform,
+					"lat": location[0],
+					"lon": location[1],
+					"arrival": scheduled_stop["arrival"],
+					"departure": scheduled_stop["departure"],
+				}
+			)
+			map_stops.setdefault(
+				stop_id,
+				{
+					"id": stop_id,
+					"name": stop_name,
+					"platform": platform,
+					"lat": location[0],
+					"lon": location[1],
+				},
+			)
+		if len(stop_points) < 2:
+			continue
+
+		route_id = item["route_id"]
+		route = static_info["routes"].get(route_id, {})
+		line_key = (
+			route_id,
+			item["direction"],
+			tuple(point["id"] for point in stop_points),
+		)
+		route_lines.setdefault(
+			line_key,
+			{
+				"id": f"{route_id}:{item['direction']}:{len(route_lines)}",
+				"name": item["route_name"],
+				"direction": item["direction"],
+				"color": _map_color(route.get("color"), "#456A8A"),
+				"stops": stop_points,
+			},
+		)
+
+		vehicle_key = (trip_id, item["service_date"])
+		if vehicle_key in seen_vehicles:
+			continue
+		seen_vehicles.add(vehicle_key)
+		try:
+			service_day = datetime.strptime(
+				item["service_date"], "%Y%m%d"
+			).date()
+			delay = item.get("delay_seconds") or 0
+			delay = int(delay)
+		except (TypeError, ValueError):
+			delay = 0
+			service_day = item["scheduled_departure_utc"].astimezone(
+				MELBOURNE_TZ
+			).date()
+		position = _estimate_trip_location(
+			stop_points, service_day, now, timedelta(seconds=delay)
+		)
+		if position is None:
+			continue
+		vehicles.append(
+			{
+				"trip_id": trip_id,
+				"route": item["route_name"],
+				"route_color": _map_color(
+					route.get("color"), "#456A8A"
+				),
+				"route_text_color": _map_color(
+					route.get("text_color"), "#FFFFFF"
+				),
+				"direction": item["direction"],
+				"platform": item["platform"],
+				"realtime": item["realtime"],
+				"lat": position[0],
+				"lon": position[1],
+			}
+		)
+
+	return {
+		"station": {
+			"name": items[0]["stop_name"] if items else str(STOP_ID),
+			"lat": station_coordinate[0] if station_coordinate else None,
+			"lon": station_coordinate[1] if station_coordinate else None,
+			"stop_ids": station_ids,
+		},
+		"routes": list(route_lines.values()),
+		"stops": list(map_stops.values()),
+		"vehicles": vehicles,
+		"departures": _map_departures(items, static_info),
+		"updated_at": now.astimezone(MELBOURNE_TZ).isoformat(),
+	}
+
+
+def _map_departures(items, static_info=None):
+	"""Format every displayed departure for the map sidebar."""
+	if static_info is None:
+		static_info = _load_static_info()
+	departures = []
+	for item in items:
+		route = static_info["routes"].get(item["route_id"], {})
+		delay = item["delay_seconds"]
+		status = _format_delay(delay)
+		if delay is not None and delay > 0:
+			status_color = "#b42318"
+		elif delay is not None and delay < 0:
+			status_color = "#b54708"
+		elif item["realtime"]:
+			status_color = "#18794e"
+		else:
+			status_color = "#52616b"
+		departures.append(
+			{
+				"route": item["route_name"],
+				"route_color": _map_color(
+					route.get("color"), "#456a8a"
+				),
+				"route_text_color": _map_color(
+					route.get("text_color"), "#ffffff"
+				),
+				"destination": item["direction"],
+				"departure_time": item[
+					"estimated_departure_utc"
+				].astimezone(MELBOURNE_TZ).strftime("%H:%M:%S"),
+				"departure_timestamp": item[
+					"estimated_departure_utc"
+				].timestamp(),
+				"status": status,
+				"status_color": status_color,
+				"realtime": item["realtime"],
+				"platform": item["platform"],
+				"run_id": item["run_id"],
+			}
+		)
+	return departures
+
+
+def _estimate_trip_location(stops, service_day, now, delay):
+	"""Interpolate a scheduled vehicle position between stops."""
+	for stop in stops:
+		try:
+			arrival = _gtfs_time(
+				service_day, stop["arrival"]
+			).astimezone(timezone.utc) + delay
+			departure = _gtfs_time(
+				service_day, stop["departure"]
+			).astimezone(timezone.utc) + delay
+		except (TypeError, ValueError):
+			continue
+		if arrival <= now <= departure:
+			return stop["lat"], stop["lon"]
+
+	for previous, following in zip(stops, stops[1:]):
+		try:
+			segment_start = _gtfs_time(
+				service_day, previous["departure"]
+			).astimezone(timezone.utc) + delay
+			segment_end = _gtfs_time(
+				service_day, following["arrival"]
+			).astimezone(timezone.utc) + delay
+		except (TypeError, ValueError):
+			continue
+		if segment_end <= segment_start or not (
+			segment_start <= now <= segment_end
+		):
+			continue
+		progress = (now - segment_start).total_seconds() / (
+			segment_end - segment_start
+		).total_seconds()
+		return (
+			previous["lat"]
+			+ (following["lat"] - previous["lat"]) * progress,
+			previous["lon"]
+			+ (following["lon"] - previous["lon"]) * progress,
+		)
+	return None
+
+
+def _ensure_map_window():
+	"""Start the optional local map browser window once."""
+	global _map_window
+	if not SHOW_MAP:
+		return None
+	if _map_window is None:
+		from ptvmap import MapWindow
+
+		_map_window = MapWindow(
+			f"Transport map - {STATIC_MODE} - {STOP_ID}"
+		)
+		_map_window.start()
+	return _map_window
+
+
+def _update_map_window(map_window, data):
+	"""Report map failures without preventing the terminal tracker from running."""
+	if map_window is None:
+		return None
+	try:
+		map_window.update(data)
+	except Exception as error:
+		print(f"Map update failed: {error}", file=sys.stderr)
+		map_window.close()
+		return None
+	return map_window
+
+
+def _matching_realtime_update(
+	trip_id,
+	service_date,
+	scheduled_departure,
+	scheduled_stop_id,
+	realtime_by_date,
+	realtime_without_date,
+):
+	"""Match an update to its service date, including feeds without start_date."""
+	trip_keys = _trip_keys(trip_id)
+	stop_keys = _stop_keys(scheduled_stop_id)
+	stop_ids = [str(scheduled_stop_id)] + sorted(
+		stop_keys - {str(scheduled_stop_id)}
+	)
+	exact = [
+		realtime_by_date[(key, service_date, stop_id)]
+		for key in trip_keys
+		for stop_id in stop_ids
+		if (key, service_date, stop_id) in realtime_by_date
+	]
+	if exact:
+		return min(exact, key=lambda update: _realtime_distance(
+			update, scheduled_departure
+		))
+
+	candidates = [
+		update
+		for key in trip_keys
+		for (candidate_key, candidate_stop_id), updates
+		in realtime_without_date.items()
+		if candidate_key == key and candidate_stop_id in stop_keys
+		for update in updates
+	]
+	if not candidates:
+		candidates = [
+			update
+			for key in trip_keys
+			for (candidate_key, candidate_date, candidate_stop_id), update
+			in realtime_by_date.items()
+			if candidate_key == key
+			and candidate_date == service_date
+			and candidate_stop_id in stop_keys
+		]
+	if not candidates:
+		return None, None
+
+	update = min(
+		candidates,
+		key=lambda item: _realtime_distance(item, scheduled_departure),
+	)
+	if _realtime_distance(update, scheduled_departure) > timedelta(hours=12):
+		return None, None
+	return update
+
+
+def _realtime_distance(update, scheduled_departure):
+	times = [value[0] for value in update if value is not None]
+	return min(
+		(abs(value - scheduled_departure) for value in times),
+		default=timedelta.max,
+	)
 
 
 def _gtfs_time(day, value):
@@ -675,23 +1247,96 @@ def _format_delay(delay_seconds):
 
 
 def save_observation(row):
-	exists = CSV_FILE.exists()
-	with CSV_FILE.open("a", newline="", encoding="utf-8") as file:
-		writer = csv.DictWriter(file, fieldnames=row.keys())
-		if not exists:
+	if not CSV_FILE.exists():
+		with CSV_FILE.open("w", newline="", encoding="utf-8") as file:
+			writer = csv.DictWriter(file, fieldnames=row.keys())
 			writer.writeheader()
-		writer.writerow(row)
+			writer.writerow(row)
+		return
+
+	with CSV_FILE.open("r", newline="", encoding="utf-8") as file:
+		reader = csv.reader(file)
+		fieldnames = next(reader, [])
+		max_extra_columns = max(
+			(
+				len(previous_row) - len(fieldnames)
+				for previous_row in reader
+			),
+			default=0,
+		)
+	if set(row).issubset(fieldnames):
+		with CSV_FILE.open("a", newline="", encoding="utf-8") as file:
+			csv.DictWriter(file, fieldnames=fieldnames).writerow(row)
+		return
+
+	original_fieldnames = list(fieldnames)
+	fieldnames.extend(key for key in row if key not in fieldnames)
+	legacy_fieldnames = []
+	for index in range(1, max_extra_columns + 1):
+		while f"legacy_extra_{index}" in fieldnames:
+			index += 1
+		name = f"legacy_extra_{index}"
+		legacy_fieldnames.append(name)
+		fieldnames.append(name)
+	temporary_path = None
+	try:
+		with tempfile.NamedTemporaryFile(
+			"w",
+			newline="",
+			encoding="utf-8",
+			dir=CSV_FILE.parent,
+			delete=False,
+		) as temporary_file:
+			temporary_path = Path(temporary_file.name)
+			writer = csv.DictWriter(temporary_file, fieldnames=fieldnames)
+			writer.writeheader()
+			with CSV_FILE.open("r", newline="", encoding="utf-8") as source:
+				reader = csv.reader(source)
+				next(reader, None)
+				for previous_values in reader:
+					previous_row = dict(
+						zip(original_fieldnames, previous_values)
+					)
+					extra_values = previous_values[len(original_fieldnames):]
+					previous_row.update(
+						zip(legacy_fieldnames, extra_values)
+					)
+					writer.writerow(previous_row)
+			writer.writerow(row)
+		os.replace(temporary_path, CSV_FILE)
+	finally:
+		if temporary_path is not None and temporary_path.exists():
+			temporary_path.unlink()
 
 
 def main():
-	print(
+	try:
+		map_window = _ensure_map_window()
+	except Exception as error:
+		print(f"Map window unavailable: {error}", file=sys.stderr)
+		map_window = None
+	tracking_message = (
 		f"Tracking stop {STOP_ID}; refreshing every {POLL_SECONDS} seconds. "
 		"Press Ctrl+C to stop."
 	)
-	_print_disruptions()
+	clear_screen = CLEAR_TERMINAL and sys.stdout.isatty()
+	if not clear_screen:
+		print(tracking_message)
+		_print_disruptions()
+	first_clear_refresh = True
 	while True:
 		try:
+			if clear_screen:
+				_clear_terminal()
+				print(tracking_message)
+				if first_clear_refresh:
+					_print_disruptions()
+					first_clear_refresh = False
 			items = departures()
+			if map_window is not None:
+				map_window = _update_map_window(
+					map_window, _build_map_data(items)
+				)
 			if not items:
 				stop_name = _load_static_info()["stops"].get(
 					str(STOP_ID), f"stop {STOP_ID}"
@@ -717,6 +1362,7 @@ def main():
 						"observed_utc": observed,
 						"stop_id": STOP_ID,
 						"stop_name": item["stop_name"],
+						"platform": item["platform"],
 						"route_id": item.get("route_id"),
 						"route_name": item.get("route_name"),
 						"run_id": item.get("run_id"),
@@ -765,6 +1411,8 @@ def main():
 						f"{_colored_route(row['route_name'], item['route_id'], _load_static_info()['routes'])} | ",
 						end = ""
 					)
+					if item["platform"]:
+						print(f"{item['platform']} | ", end="")
 					print(
 						f"{item['route_long_name']} | " if PRINT_LONG_NAME else "",
 						end = ""
@@ -778,9 +1426,14 @@ def main():
 				print("----------------------------------------------\n")
 			time.sleep(POLL_SECONDS)
 		except KeyboardInterrupt:
+			if map_window is not None:
+				map_window.close()
 			print("\nStopped.")
 			return
 		except Exception as error:
+			if clear_screen:
+				_clear_terminal()
+				print(tracking_message)
 			print(f"Error: {error}", file=sys.stderr)
 			time.sleep(POLL_SECONDS)
 
